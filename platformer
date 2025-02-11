@@ -1,0 +1,152 @@
+import pygame
+import random
+import math
+
+# Initialize Pygame
+pygame.init()
+
+# Screen dimensions and frame rate
+SCREEN_WIDTH = 400
+SCREEN_HEIGHT = 600
+FPS = 60
+
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Vertical Jumping Game with Undulating Platforms")
+clock = pygame.time.Clock()
+
+# Colors
+WHITE = (255, 255, 255)
+BLUE  = (0, 0, 255)
+GREEN = (0, 255, 0)
+
+# ----------------------------
+# Define the Player sprite
+# ----------------------------
+class Player(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.width = 30
+        self.height = 30
+        self.image = pygame.Surface((self.width, self.height))
+        self.image.fill(BLUE)
+        self.rect = self.image.get_rect()
+        self.rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50)
+        self.vel_y = 0
+        self.speed = 5  # horizontal movement speed
+
+    def update(self):
+        # Allow left/right movement via arrow keys.
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT]:
+            self.rect.x -= self.speed
+            if self.rect.left < 0:
+                self.rect.left = 0
+        if keys[pygame.K_RIGHT]:
+            self.rect.x += self.speed
+            if self.rect.right > SCREEN_WIDTH:
+                self.rect.right = SCREEN_WIDTH
+
+        # Apply gravity
+        self.vel_y += 0.5  # gravity acceleration
+        self.rect.y += int(self.vel_y)
+
+        # If the player falls off the bottom, reset its position.
+        if self.rect.top > SCREEN_HEIGHT:
+            self.rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50)
+            self.vel_y = 0
+
+    def jump(self):
+        """Set upward velocity for a jump (or bounce)."""
+        self.vel_y = -10
+
+# ----------------------------
+# Define the Platform sprite
+# ----------------------------
+class Platform(pygame.sprite.Sprite):
+    def __init__(self, x, y, width, height=10):
+        super().__init__()
+        self.image = pygame.Surface((width, height))
+        self.image.fill(GREEN)
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.base_y = y  # the center around which the platform undulates
+        self.rect.y = y
+
+        # Randomize amplitude and speed so platforms undulate differently.
+        self.amplitude = random.randint(5, 20)
+        self.speed = random.uniform(0.02, 0.05)  # how fast the phase changes
+        self.phase = random.uniform(0, 2 * math.pi)
+        self.dy = 0  # will store the last vertical displacement
+
+    def update(self):
+        # Save the old vertical position.
+        old_y = self.rect.y
+
+        # Compute a new y position using a sine wave.
+        self.phase += self.speed
+        new_y = self.base_y + self.amplitude * math.sin(self.phase)
+        self.rect.y = new_y
+
+        # Store the difference so that we can “carry” the player.
+        self.dy = new_y - old_y
+
+# ----------------------------
+# Sprite groups
+# ----------------------------
+all_sprites = pygame.sprite.Group()
+platforms = pygame.sprite.Group()
+
+player = Player()
+all_sprites.add(player)
+
+# Create several platforms at different vertical positions.
+# The bottom platform will be near the bottom of the screen.
+num_platforms = 7
+platform_width = 60
+platform_gap = 80  # vertical spacing between platforms
+
+for i in range(num_platforms):
+    x = random.randint(0, SCREEN_WIDTH - platform_width)
+    y = SCREEN_HEIGHT - i * platform_gap
+    p = Platform(x, y, platform_width)
+    platforms.add(p)
+    all_sprites.add(p)
+
+# ----------------------------
+# Main game loop
+# ----------------------------
+running = True
+while running:
+    clock.tick(FPS)
+
+    # Event processing.
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+    # Update all sprites.
+    all_sprites.update()
+
+    # Check for collision between the player and platforms.
+    # Only check when the player is falling.
+    if player.vel_y > 0:
+        # pygame.sprite.spritecollide returns a list of platforms that overlap the player.
+        hits = pygame.sprite.spritecollide(player, platforms, False)
+        if hits:
+            # For simplicity, use the first collided platform.
+            platform = hits[0]
+            # A simple check to ensure we only bounce if the player hits the top of a platform.
+            if player.rect.bottom <= platform.rect.top + 10:
+                # Snap the player's bottom to the platform's top.
+                player.rect.bottom = platform.rect.top
+                # Also, if the platform is moving, “carry” the player along.
+                player.rect.y += int(platform.dy)
+                # Bounce upward.
+                player.jump()
+
+    # Draw everything.
+    screen.fill(WHITE)
+    all_sprites.draw(screen)
+    pygame.display.flip()
+
+pygame.quit()
