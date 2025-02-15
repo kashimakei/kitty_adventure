@@ -30,12 +30,24 @@ BLACK = (0, 0, 0)
 SKY_BLUE = (145, 220, 255)
 WHITE = (255, 255, 255)
 
-# Fonts for messages and HUD
-font_large = pygame.font.SysFont(None, 72)
-font_medium = pygame.font.SysFont(None, 55)
-font_small = pygame.font.SysFont(None, 36)
+# Fall Colors for Leaves
+FALL_COLORS = [
+    (139, 37, 0),   # Dark Red
+    (205, 55, 0),   # Burnt Orange
+    (238, 118, 0),  # Golden Orange
+    (205, 133, 63), # Peru Brown
+    (160, 82, 45),  # Sienna
+    (218, 165, 32), # Golden Rod
+    (184, 134, 11), # Dark Golden Rod
+    (139, 69, 19),  # Saddle Brown
+]
 
-congrats_text = font_medium.render("Congratulations Kitty!", True, (0, 128, 0))
+# Fonts for messages and HUD
+font_large = pygame.font.SysFont(None, 75)
+font_medium = pygame.font.SysFont(None, 55)
+font_small = pygame.font.SysFont(None, 35)
+
+congrats_text = font_large.render("Congratulations Kitty!", True, (184, 134, 11))
 game_over_text = font_large.render("Game Over!", True, (255, 0, 0))
 restart_text = font_small.render("Press R to Restart or Q to Quit", True, BLACK)
 
@@ -56,14 +68,98 @@ kitty_mini = pygame.transform.scale(kitty_mini, (40, 40))  # Scale it down for l
 splash_image = pygame.image.load('assets/Kitty_splash.png')
 splash_image = pygame.transform.scale(splash_image, (SCREEN_WIDTH, SCREEN_HEIGHT //2))
 
+# Load images
+branch_image = pygame.image.load('assets/branch.png')
+background_image = pygame.image.load('assets/Background_lvl1.png')
+
+# Scale the background image to be taller than the screen height
+background_image = pygame.transform.scale(background_image, (SCREEN_WIDTH, 3 * SCREEN_HEIGHT))
+
 # Setup display and clock
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Kitty Adventure")
 clock = pygame.time.Clock()
 
 # Camera variables for vertical scrolling
-camera_offset = 0  
+camera_offset = 0
 camera_follow_kitty = False  # When True, the camera follows Kitty upward
+
+# ------------------ Leaf Class -------------------------------
+class Leaf(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        # Create a leaf surface
+        self.size = random.randint(5, 15)
+        self.original_image = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+        
+        # Draw a leaf shape
+        color = random.choice(FALL_COLORS)
+        points = [
+            (self.size//2, 0),  # top
+            (self.size, self.size//2),  # right
+            (self.size//2, self.size),  # bottom
+            (0, self.size//2),  # left
+        ]
+        pygame.draw.polygon(self.original_image, color, points)
+        
+        self.image = self.original_image
+        self.rect = self.image.get_rect(center=(x, y))
+        
+        # Movement variables
+        self.x = float(x)
+        self.y = float(y)
+        self.angle = random.uniform(0, 360)
+        self.rotation_speed = random.uniform(-2, 2)
+        self.fall_speed = random.uniform(1, 2)
+        self.horizontal_speed = 0
+        self.oscillation_phase = random.uniform(0, 2 * math.pi)
+        self.oscillation_speed = random.uniform(1, 3)
+
+    def update(self, breeze_strength, dt):
+        # Update position based on breeze and natural falling
+        self.horizontal_speed = breeze_strength * 1.5
+        
+        # Add oscillating motion
+        oscillation = math.sin(self.oscillation_phase) * 0.5
+        self.oscillation_phase += self.oscillation_speed * dt
+        
+        # Update position
+        self.x += (self.horizontal_speed + oscillation) * dt * 10
+        self.y += self.fall_speed * dt * 60
+        
+        # Rotate leaf
+        self.angle += (self.rotation_speed + breeze_strength * 0.5) * dt * 60
+        self.image = pygame.transform.rotate(self.original_image, self.angle)
+        
+        # Update rect position
+        old_center = self.rect.center
+        self.rect = self.image.get_rect()
+        self.rect.center = (self.x, self.y)
+        
+        # Reset if leaf goes off screen
+        if (self.rect.right < 0 or self.rect.left > SCREEN_WIDTH or
+            self.rect.top > SCREEN_HEIGHT):
+            self.reset()
+
+    def reset(self):
+        # Reset leaf to top of screen at random x position
+        self.x = random.randint(0, SCREEN_WIDTH)
+        self.y = -50
+        self.rect.center = (self.x, self.y)
+        self.angle = random.uniform(0, 360)
+        self.rotation_speed = random.uniform(-2, 2)
+        self.fall_speed = random.uniform(1, 2)
+
+# ------------------ Leaf Management -------------------------
+leaves = pygame.sprite.Group()
+MAX_LEAVES = 50
+
+def initialize_leaves():
+    for _ in range(MAX_LEAVES):
+        x = random.randint(0, SCREEN_WIDTH)
+        y = random.randint(-SCREEN_HEIGHT, 0)
+        leaf = Leaf(x, y)
+        leaves.add(leaf)
 
 # ------------------ Splash Screen -------------------------
 def splash_screen():
@@ -114,8 +210,8 @@ def get_breeze_strength():
     """
     global time_elapsed
     base_strength = 1.5  # Base force of the wind
-    variability = 3.0  # How much the wind fluctuates
-    cycle_speed = 0.1  # Speed of oscillation 
+    variability = 5.0  # How much the wind fluctuates
+    cycle_speed = 0.5  # Speed of oscillation 
     
     return base_strength + variability * math.sin(cycle_speed * time_elapsed)
 
@@ -163,12 +259,10 @@ class Platform(pygame.sprite.Sprite):
     def __init__(self, platform_data):
         super().__init__()
         x, y, width, height = platform_data
-        self.surf = pygame.Surface((width, height))
-        self.surf.fill(BLACK)
-        self.rect = self.surf.get_rect(topleft=(x, y))
+        self.image = pygame.transform.scale(branch_image, (width, height))
+        self.rect = self.image.get_rect(topleft=(x, y))
         self.original_x = x
         self.base_y = y  
-        # We no longer use a random amplitude or undulation_speed.
         self.phase = random.uniform(0, 2 * math.pi)  # For vertical oscillation timing.
         self.offset_phase = random.uniform(0, 2 * math.pi)  # For horizontal sway offset.
         self.prev_rect = self.rect.copy()
@@ -189,14 +283,11 @@ class Platform(pygame.sprite.Sprite):
             undulation_offset = breeze_strength * math.sin(self.phase)
             self.rect.y = self.base_y + undulation_offset
 
-
-
-
 # ------------------ Kitty Class -------------------------------
 class Kitty(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
-        self.image = pygame.image.load('assets/kitty.png').convert_alpha()
+        self.image = pygame.image.load('assets/kitty.png')
         self.image = pygame.transform.scale(self.image, (100, 100))
         self.rect = self.image.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
         self.speed = 5
@@ -229,8 +320,9 @@ class Kitty(pygame.sprite.Sprite):
         if pressed_keys[pygame.K_RIGHT]:
             self.rect.x += self.speed
 
-        # Apply wind push (breeze strength affects this)
-        self.rect.x += breeze_strength * 0.2  # Scaled down to avoid excessive push
+        # Apply wind push only while kitty is jumping (breeze strength affects this)
+        if kitty.jump:
+            self.rect.x += breeze_strength * 0.3  # Scaled down to avoid excessive push
 
         # Keep Kitty inside screen bounds
         if self.rect.left < 0:
@@ -407,6 +499,10 @@ def draw_hud():
 # ------------------ Main Game Loop ----------------------------
 def main_game():
     global camera_offset, camera_follow_kitty, time_elapsed, level_complete, lives
+    
+    # Initialize leaves
+    initialize_leaves()
+    
     running = True
     while running:
         dt = clock.tick(FPS) / 1000.0  # Delta time in seconds
@@ -430,21 +526,27 @@ def main_game():
         pressed_keys = pygame.key.get_pressed()
         kitty.update(pressed_keys, platforms, breeze_strength)
 
-
         # Update platforms with the new breeze strength
         for platform in platforms:
             platform.update(breeze_strength)
+            
+        # Update leaves
+        leaves.update(breeze_strength, dt)
         
         # --- Camera vertical scrolling ---
         if kitty.jump and kitty.rect.top <= SCREEN_HEIGHT / 2:
             camera_follow_kitty = True
         if camera_follow_kitty and not kitty.falling:
-            camera_movement = max(0, (SCREEN_HEIGHT / 2) - kitty.rect.top)
+            camera_movement = max(0, (SCREEN_HEIGHT / 2) - kitty.rect.top) * 0.1  # Adjust speed
             camera_offset += camera_movement
             kitty.rect.y += camera_movement
             for platform in platforms:
                 platform.rect.y += camera_movement
                 platform.base_y += camera_movement  # Update base_y to include camera movement.
+            # Move leaves with camera
+            for leaf in leaves:
+                leaf.rect.y += camera_movement
+                leaf.y += camera_movement
 
         if kitty.falling:
             camera_follow_kitty = False
@@ -459,11 +561,6 @@ def main_game():
             else:
                 game_over_screen()
                 continue  # After game over, restart loop.
-
-#        # --- Apply Breeze (Platform Sway) ---
-#        for platform in platforms:
-#            sway_offset = breeze_amplitude * math.sin(breeze_speed * time_elapsed + platform.offset_phase)
-#            platform.rect.x = platform.original_x + sway_offset
 
         # --- Collision Detection for Landing on Platforms ---
         collisions = pygame.sprite.spritecollide(kitty, platforms, False)
@@ -483,16 +580,13 @@ def main_game():
                 kitty.rect.y += dy
                 break
 
-
         # --- Level Complete Check ---
-        # Build a test final platform based on final_platform_data (with camera_offset already applied via restart/new-level)
         test_platform = Platform((
             final_platform_data[0],
             final_platform_data[1] + camera_offset,  # camera_offset was reset when generating level
             final_platform_data[2],
             final_platform_data[3]
         ))
-        # Check that Kitty is falling and her bottom is (within a tolerance) exactly at the top of the final platform.
         if (not level_complete and kitty.velocity >= 0 and kitty.previous_rect.bottom <= test_platform.rect.top and kitty.rect.bottom >= test_platform.rect.top):
             kitty.falling = False
             kitty.velocity = 0
@@ -505,7 +599,13 @@ def main_game():
             start_new_level()
 
         # --- Drawing ---
-        screen.fill(SKY_BLUE)
+        # Parallax background scrolling - align bottom with screen bottom initially
+        background_y = -1.5 * SCREEN_HEIGHT + (camera_offset % (3 * SCREEN_HEIGHT))
+        screen.blit(background_image, (0, background_y))
+        screen.blit(background_image, (0, background_y + 3 * SCREEN_HEIGHT))
+
+        # Draw leaves
+        leaves.draw(screen)
 
         for entity in all_sprites:
             if isinstance(entity, Kitty):
@@ -513,12 +613,11 @@ def main_game():
             else:
                 # Only draw platforms that are visible
                 if entity.rect.top > -camera_offset:
-                    screen.blit(entity.surf, entity.rect)
+                    screen.blit(entity.image, entity.rect)
 
         draw_hud()  # Always draw HUD last so platforms don’t obscure it
 
         pygame.display.flip()
-
 
 # ------------------ Start the Game -------------------------
 splash_screen()
