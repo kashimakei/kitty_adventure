@@ -320,8 +320,8 @@ class Kitty(pygame.sprite.Sprite):
         if pressed_keys[pygame.K_RIGHT]:
             self.rect.x += self.speed
 
-        # Apply wind push only while kitty is jumping (breeze strength affects this)
-        if kitty.jump:
+        # Apply wind push only while Kitty is jumping (breeze strength affects this)
+        if self.jump:
             self.rect.x += breeze_strength * 0.3  # Scaled down to avoid excessive push
 
         # Keep Kitty inside screen bounds
@@ -587,10 +587,15 @@ def main_game():
             final_platform_data[2],
             final_platform_data[3]
         ))
-        if (not level_complete and kitty.velocity >= 0 and kitty.previous_rect.bottom <= test_platform.rect.top and kitty.rect.bottom >= test_platform.rect.top):
+        if (
+            not level_complete
+            and kitty.velocity >= 0
+            and kitty.previous_rect.bottom <= test_platform.rect.top
+            and kitty.rect.bottom >= test_platform.rect.top
+        ):
             kitty.falling = False
             kitty.velocity = 0
-            kitty.rect.bottom = platform.rect.top
+            kitty.rect.bottom = test_platform.rect.top
             level_complete = True
             print("Level complete!")
             screen.blit(congrats_text, ((SCREEN_WIDTH - congrats_text.get_width()) // 2, SCREEN_HEIGHT // 2))
