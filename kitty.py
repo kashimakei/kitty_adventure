@@ -9,7 +9,7 @@ from pygame.locals import *
 
 # Import modules
 from constants import *
-from sprites import Kitty, Platform, Dog, Leaf
+from sprites import Kitty, Platform, Dog, Leaf, Eagle
 from level_utils import get_breeze_strength, generate_platforms, setup_dog_spawn_candidates
 
 # ------------------ Initialization -------------------------
@@ -56,7 +56,7 @@ mixer.music.play(-1)  # Loop music
 
 # Game State Variables
 max_levels = 10
-current_level = 1
+current_level = 5
 current_difficulty = 2
 level_complete = False
 lives = 3
@@ -70,11 +70,13 @@ all_sprites = pygame.sprite.Group()
 platforms = pygame.sprite.Group()
 leaves = pygame.sprite.Group()
 dogs = pygame.sprite.Group()
+eagles = pygame.sprite.Group()
 
 # Other State
 final_platform_data = None
 dog_candidate_platforms = []
 next_dog_spawn_time = 0
+next_eagle_spawn_time = 0
 
 kitty = None # Will be initialized in setup/start
 
@@ -130,7 +132,23 @@ def spawn_dog_for_difficulty(difficulty):
 
     platform = random.choice(candidates)
     dog = Dog(platform)
+    platform = random.choice(candidates)
+    dog = Dog(platform)
     dogs.add(dog)
+
+def spawn_eagle_logic():
+    global next_eagle_spawn_time
+    
+    # Cap concurrent eagles to 1 for now to avoid chaos
+    if len(eagles) >= 1:
+        return
+
+    eagle = Eagle(kitty)
+    eagles.add(eagle)
+    
+    # Schedule next spawn
+    wait_time = random.randint(5000, 10000) # 5-10 seconds
+    next_eagle_spawn_time = pygame.time.get_ticks() + wait_time
 
 def restart_current_level(regenerate=False):
     global camera_offset, level_complete, final_platform_data, dog_candidate_platforms, next_dog_spawn_time, kitty, current_level, lives
@@ -148,7 +166,9 @@ def restart_current_level(regenerate=False):
         platforms.empty()
         all_sprites.empty()
         all_sprites.add(kitty)
+        all_sprites.add(kitty)
         dogs.empty()
+        eagles.empty()
         
         plat_data_list, temp_final = generate_platforms(
             max_plats, SCREEN_WIDTH, SCREEN_HEIGHT,
@@ -173,7 +193,11 @@ def restart_current_level(regenerate=False):
 
     # Reset spawn time
     base = {1: 8000, 2: 5000, 3: 3000}.get(current_difficulty, 5000)
-    next_dog_spawn_time = pygame.time.get_ticks() + random.randint(int(base*0.5), int(base*1.5))
+    # Reset spawn time
+    base = {1: 8000, 2: 5000, 3: 3000}.get(current_difficulty, 5000)
+    now = pygame.time.get_ticks()
+    next_dog_spawn_time = now + random.randint(int(base*0.5), int(base*1.5))
+    next_eagle_spawn_time = now + random.randint(5000, 10000)
 
 def start_new_level():
     global current_level
@@ -237,7 +261,7 @@ def draw_hud():
 
 # ------------------ Main Game Loop ----------------------------
 def main_game():
-    global camera_offset, camera_follow_kitty, time_elapsed, level_complete, lives, next_dog_spawn_time, kitty, dog_candidate_platforms
+    global camera_offset, camera_follow_kitty, time_elapsed, level_complete, lives, next_dog_spawn_time, next_eagle_spawn_time, kitty, dog_candidate_platforms
     
     # Init Kitty
     kitty = Kitty(meow_sounds)
@@ -288,6 +312,8 @@ def main_game():
             for leaf in leaves:
                 leaf.rect.y += camera_movement
                 leaf.y += camera_movement
+            for eagle in eagles:
+                eagle.rect.y += camera_movement
 
         if kitty.falling:
             camera_follow_kitty = False
@@ -330,6 +356,10 @@ def main_game():
         # Dogs
         for dog in list(dogs):
             dog.update(dt)
+            
+        # Eagles
+        for eagle in list(eagles):
+            eagle.update(dt)
 
         # Spawn dogs (Level > 3)
         if current_level > 3:
@@ -338,6 +368,12 @@ def main_game():
                 spawn_dog_for_difficulty(current_difficulty)
                 base = {1: 8000, 2: 5000, 3: 3000}.get(current_difficulty, 5000)
                 next_dog_spawn_time = now + random.randint(int(base * 0.5), int(base * 1.5))
+
+        # Spawn eagles (Level >= 5)
+        if current_level >= 5:
+            now = pygame.time.get_ticks()
+            if now >= next_eagle_spawn_time:
+                spawn_eagle_logic()
 
         # Collision with dogs
         hit_dog = pygame.sprite.spritecollideany(kitty, dogs)
@@ -349,6 +385,23 @@ def main_game():
                 pass
             if lives > 0:
                 pygame.time.delay(800)
+                restart_current_level(regenerate=True)
+                continue
+            else:
+                game_over_screen()
+                continue
+
+        # Collision with Eagles
+        hit_eagle = pygame.sprite.spritecollideany(kitty, eagles)
+        if hit_eagle:
+            lives -= 1
+            try:
+                hiss_sound.play()
+            except Exception:
+                pass
+                
+            if lives > 0:
+                pygame.time.delay(1000)
                 restart_current_level(regenerate=True)
                 continue
             else:
@@ -372,6 +425,9 @@ def main_game():
         for dog in dogs:
             if -100 < dog.rect.top < SCREEN_HEIGHT + 100:
                 screen.blit(dog.image, dog.rect)
+
+        for eagle in eagles:
+            screen.blit(eagle.image, eagle.rect)
 
         draw_hud()
         pygame.display.flip()

@@ -1,7 +1,6 @@
-
-import pygame
 import random
 import math
+import pygame
 from constants import *
 
 class Leaf(pygame.sprite.Sprite):
@@ -187,34 +186,26 @@ class Kitty(pygame.sprite.Sprite):
 class Dog(pygame.sprite.Sprite):
     def __init__(self, platform):
         super().__init__()
-        # Load the provided Fierce_Dog asset if present, otherwise fallback to simple rectangle
         try:
             img = pygame.image.load('assets/Fierce_Dog.png').convert_alpha()
-            # Scale to a reasonable in-game size while preserving aspect ratio
             self.original_image = pygame.transform.smoothscale(img, (100, 60))
         except Exception:
             self.original_image = pygame.Surface((100, 60), pygame.SRCALPHA)
             self.original_image.fill((120, 20, 20))
-        # Current image may be flipped depending on direction
         self.image = self.original_image
         self.platform = platform
-        # position dog on top of the platform
         self.offset_x = max(10, min(platform.rect.width - 20, platform.rect.width // 2))
         self.rect = self.image.get_rect()
         self.rect.midbottom = (platform.rect.left + self.offset_x, platform.rect.top)
-        self.speed = random.uniform(20, 45)  # pixels per second
-        # Direction: -1 left, 1 right
+        self.speed = random.uniform(20, 45) 
         self.direction = random.choice([-1, 1])
 
-        # Ensure sprite faces the initial direction
         if self.direction < 0:
             self.image = pygame.transform.flip(self.original_image, True, False)
         else:
             self.image = self.original_image
 
     def update(self, dt):
-        # Keep the dog positioned relative to its moving platform
-        # Update offset by speed and direction, clamped to platform bounds
         self.offset_x += self.direction * self.speed * dt
         if self.offset_x < 10:
             self.offset_x = 10
@@ -223,13 +214,58 @@ class Dog(pygame.sprite.Sprite):
             self.offset_x = self.platform.rect.width - 10
             self.direction *= -1
 
-        # Update absolute position based on platform's current rect
         self.rect.midbottom = (self.platform.rect.left + int(self.offset_x), self.platform.rect.top)
 
-        # Flip the image when direction changes so the dog faces movement
         if self.direction < 0:
-            # face left
             self.image = pygame.transform.flip(self.original_image, True, False)
         else:
-            # face right
             self.image = self.original_image
+
+class Eagle(pygame.sprite.Sprite):
+    def __init__(self, kitty):
+        super().__init__()
+        try:
+            img = pygame.image.load('assets/Flying_Eagle.png').convert_alpha()
+            # Scale accordingly
+            self.original_image = pygame.transform.smoothscale(img, (120, 80))
+        except Exception:
+            self.original_image = pygame.Surface((120, 80), pygame.SRCALPHA)
+            self.original_image.fill((100, 100, 0)) # Placeholder color
+
+        # Determine side to swoop in from (left or right)
+        self.side = random.choice(['left', 'right'])
+        
+        # Set starting position based on side
+        start_y = random.randint(100, SCREEN_HEIGHT // 2) # Start from upper half
+        if self.side == 'left':
+            self.rect = self.original_image.get_rect(midright=(0, start_y))
+            self.velocity_x = random.randint(150, 250)
+            self.image = self.original_image 
+        else:
+            self.rect = self.original_image.get_rect(midleft=(SCREEN_WIDTH, start_y))
+            self.velocity_x = random.randint(-250, -150)
+            # Flip image to face left
+            self.image = pygame.transform.flip(self.original_image, True, False)
+
+        # Target kitty's current position roughly? NO, just swoop across
+        # Actually, let's target kitty slightly
+        self.target_y = kitty.rect.y
+        self.velocity_y = (self.target_y - start_y) / (SCREEN_WIDTH / abs(self.velocity_x)) 
+        
+        # Cap vertical velocity so it doesn't dive too steep
+        self.velocity_y = max(-100, min(100, self.velocity_y))
+        
+        # Ensure the sprite is facing the direction of travel
+        if self.velocity_x < 0:
+            self.image = self.original_image
+        else:
+            self.image = pygame.transform.flip(self.original_image, True, False)
+
+    def update(self, dt):
+        self.rect.x += self.velocity_x * dt
+        self.rect.y += self.velocity_y * dt
+
+        # Kill if off screen
+        if (self.velocity_x > 0 and self.rect.left > SCREEN_WIDTH) or \
+           (self.velocity_x < 0 and self.rect.right < 0):
+            self.kill()
