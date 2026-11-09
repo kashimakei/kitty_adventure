@@ -355,8 +355,11 @@ def main_game():
             if now >= next_eagle_spawn_time:
                 spawn_eagle_logic()
 
+        # Only an enemy's paws, jaws, beak or talons count, and only on Kitty's body
+        body = kitty.body_rect()
+
         # Collision with dogs
-        hit_dog = pygame.sprite.spritecollideany(kitty, dogs)
+        hit_dog = next((dog for dog in dogs if dog.strikes(body)), None)
         if hit_dog:
             lives -= 1
             try:
@@ -372,7 +375,7 @@ def main_game():
                 continue
 
         # Collision with Eagles
-        hit_eagle = pygame.sprite.spritecollideany(kitty, eagles)
+        hit_eagle = next((eagle for eagle in eagles if eagle.strikes(body)), None)
         if hit_eagle:
             lives -= 1
             try:

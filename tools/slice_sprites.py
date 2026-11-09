@@ -9,7 +9,9 @@ The sheets are loose layouts on a flat grey background, so instead of a grid thi
   4. scales every frame of a character by the same factor, so it's the same size in all poses,
   5. writes <out>/<animation>_<n>.png plus <out>/anchors.json, which records the point in each
      frame the game pins to the character's hitbox (feet, gripping paw, or head), so poses
-     line up from frame to frame.
+     line up from frame to frame,
+  6. for enemies, writes <out>/<animation>_<n>_hit.png: a mask of the parts that can hurt Kitty
+     (an eagle's beak and talons, a dog's paws and mouth).
 
 Run from the repo root:  python tools/slice_sprites.py [character ...]
        numbered previews of every blob, for editing regions:  python tools/slice_sprites.py --index <dir>
@@ -37,6 +39,15 @@ NOSE_TO_CENTER = 40
 GRIP_BAND = 6  # px below the topmost pixel averaged to find a gripping paw
 HEAD_WHITE = 215  # an eagle's head is the near-white feathers in the front half of the frame
 
+# Damage masks. An eagle's beak and feet are the only golden-yellow parts; the mask grows a few px
+# to take in the dark claw tips. A dog's paws are cream like its chest, so they're found by
+# position instead: the lowest strip of each pose. Its mouth is a disc around the nose: the
+# frontmost solid dark blob (the thin dark outline doesn't survive a 1px erosion; the nose does).
+CLAW_REACH = 3        # px the yellow mask grows to cover claws
+PAW_BAND = 0.14       # fraction of the frame's height, from the bottom, that counts as paws
+MOUTH_RADIUS = 14     # px
+NOSE_DARK = 110       # max channel value for nose-black pixels
+
 # Per character: its sheets, background grey, which frame sets the scale and how tall it should
 # be in game pixels, and its animations. Sheets painted at different sizes can set
 # "match_sheet_areas" to be scaled so the character's average silhouette area matches the
@@ -53,7 +64,8 @@ CHARACTERS = {
             "hang_climb": "assets/source/kitty_sheet_hang_climb.jpg",
         },
         "reference": ("walk", 0),
-        "target_height": 96,  # the size everything else is judged against
+        "target_height": 88,  # the size everything else is judged against
+        "nose_to_center": 37,
         "animations": {
             # Core sheet
             "walk":      ("core", (0, 40, 1500, 340), "nose"),
@@ -85,9 +97,12 @@ CHARACTERS = {
             "run": "assets/source/dog_sheet_run.jpg",
         },
         "reference": ("sniff", 0),
-        "target_height": 96,  # standing dog about the same size as Kitty walking
+        "target_height": 104,  # a standing dog is a little bigger than Kitty
         "match_sheet_areas": True,
-        "nose_to_center": 42,
+        "nose_to_center": 45,
+        "damage": "paws_mouth",
+        # Sitting poses rest the curled tail on the ground; only the front of the paw strip counts
+        "paw_strip_from": {"scratch": 0.35},
         "animations": {
             "sniff":   ("behaviours", (0, 80, 2400, 480), "nose"),
             "menace":  ("behaviours", (0, 500, 2400, 900), "nose"),
@@ -107,6 +122,7 @@ CHARACTERS = {
         "sheets": {"eagle": "assets/source/eagle_sheet.jpg"},
         "reference": ("flap", 0),
         "target_height": 150,  # wings up; eagles are the biggest thing in the sky
+        "damage": "yellow",
         "animations": {
             "flap":  ("eagle", (0, 60, 2752, 540), "head"),
             "dive":  ("eagle", (0, 560, 2752, 1030), "head"),
@@ -184,6 +200,50 @@ def anchor_for(frame, mode, nose_to_center=NOSE_TO_CENTER):
     return (max(0, w - 1 - nose_to_center), h - 1)
 
 
+def is_golden(colour):
+    r, g, b = colour[:3]
+    return r >= 200 and 120 <= g <= 225 and b <= 110 and r - b >= 110
+
+
+def find_nose(frame, solid):
+    """Centre of the frontmost thick dark blob of a right-facing pose (above the paws)."""
+    w, h = frame.get_size()
+    def dark(x, y):
+        return solid.get_at((x, y)) and max(frame.get_at((x, y))[:3]) <= NOSE_DARK
+    for x in range(w - 2, 0, -1):
+        ys = [y for y in range(1, int(h * 0.92))
+              if all(dark(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1))]
+        if ys:
+            return x, sum(ys) / len(ys)
+    return w - 1, h * 0.3
+
+
+def damage_mask(frame, rule, paw_strip_from=0.0):
+    """White where this frame can hurt Kitty, transparent elsewhere."""
+    w, h = frame.get_size()
+    solid = pygame.mask.from_surface(frame, 127)
+    hit = pygame.mask.Mask((w, h))
+    if rule == "yellow":
+        for y in range(h):
+            for x in range(w):
+                if solid.get_at((x, y)) and is_golden(frame.get_at((x, y))):
+                    hit.set_at((x, y))
+        kernel = pygame.mask.Mask((CLAW_REACH * 2 + 1,) * 2, fill=True)
+        hit = solid.overlap_mask(hit.convolve(kernel, None, (-CLAW_REACH, -CLAW_REACH)), (0, 0))
+    elif rule == "paws_mouth":
+        for y in range(h - round(h * PAW_BAND), h):
+            for x in range(int(w * paw_strip_from), w):
+                if solid.get_at((x, y)):
+                    hit.set_at((x, y))
+        nose_x, nose_y = find_nose(frame, solid)
+        cx, cy = nose_x - 4, nose_y + 4  # nose and the jaws just behind and below it
+        for y in range(h):
+            for x in range(w):
+                if (x - cx) ** 2 + (y - cy) ** 2 <= MOUTH_RADIUS ** 2 and solid.get_at((x, y)):
+                    hit.set_at((x, y))
+    return hit.to_surface(setcolor=(255, 255, 255, 255), unsetcolor=(0, 0, 0, 0))
+
+
 def slice_character(name, spec):
     sheets = {sheet: load_sheet(path) for sheet, path in spec["sheets"].items()}
     blobs = {sheet: find_blobs(surface, spec["background"]) for sheet, surface in sheets.items()}
@@ -215,7 +275,7 @@ def slice_character(name, spec):
     for old in os.listdir(out_dir):
         if old.endswith(".png"):
             os.remove(os.path.join(out_dir, old))
-    manifest = {"scale": scale, "animations": {}, "anchors": {}}
+    manifest = {"scale": scale, "animations": {}, "anchors": {}, "hits": {}}
     for anim, (sheet_name, region, mode) in picked.items():
         names = []
         for i, (rect, mask) in enumerate(region):
@@ -226,6 +286,11 @@ def slice_character(name, spec):
             frame_name = f"{anim}_{i}.png"
             pygame.image.save(frame, os.path.join(out_dir, frame_name))
             manifest["anchors"][frame_name] = anchor_for(frame, mode, spec.get("nose_to_center", NOSE_TO_CENTER))
+            if spec.get("damage"):
+                hit_name = f"{anim}_{i}_hit.png"
+                strip_from = spec.get("paw_strip_from", {}).get(anim, 0.0)
+                pygame.image.save(damage_mask(frame, spec["damage"], strip_from), os.path.join(out_dir, hit_name))
+                manifest["hits"][frame_name] = hit_name
             names.append(frame_name)
         manifest["animations"][anim] = names
         print(f"{name} {anim:10} {len(names)} frame(s)")

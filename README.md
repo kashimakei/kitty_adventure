@@ -61,7 +61,10 @@ Kitty's, the dogs' and the eagles' animations come from the painted sprite
 sheets in `assets/source/`. `python tools/slice_sprites.py` keys out their grey
 background, cuts each pose into `assets/kitty/`, `assets/dog/` and
 `assets/eagle/`, scales each character consistently across its sheets and records the point each frame is pinned by (feet, Kitty's
-gripping paw, or the eagle's head) in `anchors.json`. Re-run it after editing a
+gripping paw, or the eagle's head) in `anchors.json`. For enemies it also writes
+a damage mask per frame (`*_hit.png`): only a dog's paws and jaws or an eagle's
+beak and talons hurt, and only when they touch Kitty's body (see `KITTY_BODY`
+in `entities/kitty.py`), not the tail. Re-run it after editing a
 sheet; add `--index <dir>` for numbered previews of every pose it finds. Which
 frames make up each move and when they play is set in `KITTY_CLIPS` /
 `Kitty.animate()` (`entities/kitty.py`), and `DOG_CLIPS` / `Dog` and

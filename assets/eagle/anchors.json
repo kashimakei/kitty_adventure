@@ -84,5 +84,22 @@
       137,
       66
     ]
+  },
+  "hits": {
+    "flap_0.png": "flap_0_hit.png",
+    "flap_1.png": "flap_1_hit.png",
+    "flap_2.png": "flap_2_hit.png",
+    "flap_3.png": "flap_3_hit.png",
+    "flap_4.png": "flap_4_hit.png",
+    "dive_0.png": "dive_0_hit.png",
+    "dive_1.png": "dive_1_hit.png",
+    "dive_2.png": "dive_2_hit.png",
+    "dive_3.png": "dive_3_hit.png",
+    "dive_4.png": "dive_4_hit.png",
+    "talon_0.png": "talon_0_hit.png",
+    "talon_1.png": "talon_1_hit.png",
+    "talon_2.png": "talon_2_hit.png",
+    "talon_3.png": "talon_3_hit.png",
+    "talon_4.png": "talon_4_hit.png"
   }
 }

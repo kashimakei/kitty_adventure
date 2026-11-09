@@ -26,7 +26,19 @@ KITTY_CLIPS = {
     "climb": Clip(["climb_0", "climb_1", "climb_2", "climb_3", "climb_4"], fps=5 * 60 / CLIMB_FRAMES, loop=False),
     "climb_done": Clip(["climb_5"], fps=3, loop=False),
 }
-KITTY_HITBOX = (100, 100)
+KITTY_BOX = (100, 100)  # movement box: landing, grabbing, staying on screen
+# Only hits on Kitty's body count: torso and head, not the tail, ear tips or dangling legs.
+# Per clip: (px forward of the anchor, px from the pin, width, height), placed against the art.
+# Feet-pinned boxes stand on the feet and are lifted by the pin offset; grip-pinned boxes hang
+# that far below the gripping paw.
+KITTY_BODY_DEFAULT = (0, 0, 54, 64)
+KITTY_BODY = {
+    "sleep":  (0, 0, 64, 48),
+    "panic":  (0, 40, 46, 70),   # front-facing and tall: the tail hangs below the body
+    "let_go": (0, 40, 46, 70),
+    "grab":   (-14, 24, 46, 64),  # paws up and to the front, body slanting back beneath
+    "hang":   (-12, 22, 44, 62),  # one arm up; the body hangs behind it
+}
 RUN_AFTER = 0.6        # seconds of walking before Kitty breaks into a run
 SLEEP_AFTER = 15.0     # seconds sitting still before Kitty curls up
 PANIC_SPEED = 20       # px/frame; falling faster than this means a long drop
@@ -51,7 +63,7 @@ class Kitty(pygame.sprite.Sprite):
         self.released_from = None  # branch just let go of, briefly not catchable
         self.released_time = 0.0
         self.image = self.animator.frame()[0]
-        self.rect = pygame.Rect((0, 0), KITTY_HITBOX)
+        self.rect = pygame.Rect((0, 0), KITTY_BOX)
         self.rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50)
         self.speed = 5
         self.jump = False
@@ -324,6 +336,17 @@ class Kitty(pygame.sprite.Sprite):
         self.just_landed = self.just_grabbed = self.just_climbed = False
         anim.update(dt)
         self.image = anim.frame(self.facing)[0]
+
+    def body_rect(self):
+        """The part of Kitty that can be hurt."""
+        ahead, offset, w, h = KITTY_BODY.get(self.animator.name, KITTY_BODY_DEFAULT)
+        body = pygame.Rect(0, 0, w, h)
+        x = self.rect.centerx + ahead * self.facing
+        if self.animator.clip.pin == "grip":
+            body.midtop = (x, self.rect.top + offset)
+        else:
+            body.midbottom = (x, self.rect.bottom - offset)
+        return body
 
     def draw(self, screen):
         image, (ax, ay) = self.animator.frame(self.facing)

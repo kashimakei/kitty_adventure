@@ -341,11 +341,19 @@ class Dog(pygame.sprite.Sprite):
         anim.update(dt)
         self.image = anim.frame(self.facing)[0]
 
+    def _frame_topleft(self):
+        image, (ax, ay) = self.animator.frame(self.facing)
+        return image, (self.rect.centerx - ax, self.rect.bottom - ay)
+
+    def strikes(self, body):
+        """True if the dog's paws or jaws are touching `body` (Kitty's body rect)."""
+        return self.animator.strikes(self._frame_topleft()[1], self.facing, body)
+
     def draw(self, screen):
         if self.rect.right < -80 or self.rect.left > SCREEN_WIDTH + 80 or self.rect.top > SCREEN_HEIGHT + 80:
             return
-        image, (ax, ay) = self.animator.frame(self.facing)
-        screen.blit(image, (self.rect.centerx - ax, self.rect.bottom - ay))
+        image, topleft = self._frame_topleft()
+        screen.blit(image, topleft)
 
 # Built from the frames sliced out of assets/source/eagle_sheet.jpg (see tools/slice_sprites.py)
 EAGLE_CLIPS = {
@@ -458,8 +466,16 @@ class Eagle(pygame.sprite.Sprite):
         anim.update(dt)
         self.image = anim.frame(self.facing)[0]
 
-    def draw(self, screen):
+    def _frame_topleft(self):
         image, (ax, ay) = self.animator.frame(self.facing)
         head_x = self.rect.centerx + EAGLE_HEAD_OFFSET[0] * self.facing
         head_y = self.rect.centery + EAGLE_HEAD_OFFSET[1]
-        screen.blit(image, (head_x - ax, head_y - ay))
+        return image, (head_x - ax, head_y - ay)
+
+    def strikes(self, body):
+        """True if the eagle's beak or talons are touching `body` (Kitty's body rect)."""
+        return self.animator.strikes(self._frame_topleft()[1], self.facing, body)
+
+    def draw(self, screen):
+        image, topleft = self._frame_topleft()
+        screen.blit(image, topleft)
