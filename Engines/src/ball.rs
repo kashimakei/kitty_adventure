@@ -57,6 +57,7 @@ impl Ball {
 
 /// Returns the peak normal impact speed (−vel·n) across all hit segments this sub-step,
 /// or `None` if the ball did not touch the plank at all.
+#[pyfunction]
 pub fn resolve_ball_plank_collision(ball: &mut Ball, plank: &mut Branch) -> Option<f32> {
     let mut hit = false;
     let mut max_impact_speed: f32 = 0.0;
@@ -108,6 +109,7 @@ pub fn resolve_ball_plank_collision(ball: &mut Ball, plank: &mut Branch) -> Opti
     if hit { Some(max_impact_speed) } else { None }
 }
 
+#[pyfunction]
 pub fn resolve_ball_ball_collision(b1: &mut Ball, b2: &mut Ball) {
     let dist_vec = b1.pos.sub_val(b2.pos);
     let dist_sq = dist_vec.length_sq_val();

@@ -24,6 +24,8 @@ fn branch_engine(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Add ball submodule
     let ball_mod = pyo3::types::PyModule::new_bound(py, "ball")?;
     ball_mod.add_class::<Ball>()?;
+    ball_mod.add_function(wrap_pyfunction!(ball::resolve_ball_plank_collision, &ball_mod)?)?;
+    ball_mod.add_function(wrap_pyfunction!(ball::resolve_ball_ball_collision, &ball_mod)?)?;
     m.add_submodule(&ball_mod)?;
 
     // Optionally expose top-level convenience classes that could also just be imported from submodules.

@@ -50,7 +50,6 @@ class Leaf(pygame.sprite.Sprite):
         self.image = pygame.transform.rotate(self.original_image, self.angle)
         
         # Update rect position
-        old_center = self.rect.center
         self.rect = self.image.get_rect()
         self.rect.center = (self.x, self.y)
         
@@ -79,8 +78,6 @@ class Platform(pygame.sprite.Sprite):
         self.phase = random.uniform(0, 2 * math.pi)  # For vertical oscillation timing.
         self.offset_phase = random.uniform(0, 2 * math.pi)  # For horizontal sway offset.
         self.prev_rect = self.rect.copy()
-        
-        # Optional attribute for final platform, set by level generator
         self.is_final = False
 
     def update(self, breeze_strength, time_elapsed):
@@ -97,94 +94,28 @@ class Platform(pygame.sprite.Sprite):
             undulation_offset = breeze_strength * math.sin(self.phase)
             self.rect.y = self.base_y + undulation_offset
 
-class Kitty(pygame.sprite.Sprite):
-    def __init__(self, meow_sounds):
-        super().__init__()
-        img = pygame.image.load('assets/kitty.png').convert_alpha()
-        self.original_image = pygame.transform.scale(img, (100, 100))
-        self.flipped_image = pygame.transform.flip(self.original_image, True, False)
-        self.image = self.original_image
-        self.rect = self.image.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50))
-        self.speed = 5
-        self.jump = False
-        self.falling = False
-        self.velocity = 0
-        self.jump_start_time = None
-        self.max_jump_duration = 0.5  # seconds
-        self.gravity = 0.5
-        self.upward_acceleration = -1
-        self.previous_rect = self.rect.copy()
-        self.meow_sounds = meow_sounds
-        self.meow_index = 0
+    # Same support interface as BranchWrapper, so Kitty can stand on the ground too.
+    def surface_under(self, xs):
+        if any(self.rect.left <= x <= self.rect.right for x in xs):
+            return self.rect.top
+        return None
 
-    def check_falling(self, platforms):
-        # Move Kitty 1 pixel down temporarily to check for a platform underneath
-        self.rect.y += 1
-        if not pygame.sprite.spritecollideany(self, platforms):
-            if not self.falling:
-                self.falling = True
-                self.velocity = 0
-        self.rect.y -= 1
+    def apply_load(self, x, weight):
+        pass
 
-    def update(self, pressed_keys, platforms, breeze_strength):
-        self.previous_rect = self.rect.copy()
+    def kick(self, x, speed):
+        pass
 
-        # Move left/right with arrow keys
-        if pressed_keys[pygame.K_LEFT]:
-            self.rect.x -= self.speed
-        if pressed_keys[pygame.K_RIGHT]:
-            self.rect.x += self.speed
+    def shift(self, dx, dy):
+        self.rect.move_ip(dx, dy)
+        self.original_x += dx
+        self.base_y += dy
 
-        # Flip sprite based on horizontal movement direction
-        dx = self.rect.x - self.previous_rect.x
-        if dx > 0:
-            # moving right
-            self.image = self.original_image
-        elif dx < 0:
-            # moving left
-            self.image = self.flipped_image
-
-        # Apply wind push only while Kitty is jumping (breeze strength affects this)
-        if self.jump:
-            self.rect.x += breeze_strength * 0.3  # Scaled down to avoid excessive push
-
-        # Keep Kitty inside screen bounds
-        if self.rect.left < 0:
-            self.rect.left = 0
-        if self.rect.right > SCREEN_WIDTH:
-            self.rect.right = SCREEN_WIDTH
-
-        # Jumping and gravity logic remains the same
-            # Jump/fall logic
-        if self.jump:
-            jump_time = (pygame.time.get_ticks() - self.jump_start_time) / 1000.0
-            if jump_time < self.max_jump_duration:
-                self.velocity += self.upward_acceleration
-            else:
-                self.falling = True
-                self.jump = False
-                self.velocity = 0
-        if self.falling:
-            self.velocity += self.gravity
-        self.rect.y += self.velocity
-        if not self.jump:
-            self.check_falling(platforms)
-
-    def do_jump(self):
-        if not self.jump and not self.falling:
-            self.jump = True
-            self.jump_start_time = pygame.time.get_ticks()
-            self.meow_sounds[self.meow_index].play()
-            self.meow_index = (self.meow_index + 1) % len(self.meow_sounds)
-
-    def stop_jump(self):
-        if self.jump:
-            self.velocity = self.gravity
-            self.falling = True
-            self.jump = False
+    def walk_range(self):
+        return (self.rect.left + 10, self.rect.right - 10)
 
 class Dog(pygame.sprite.Sprite):
-    def __init__(self, platform):
+    def __init__(self, platform, speed_scale=1.0):
         super().__init__()
         try:
             img = pygame.image.load('assets/Fierce_Dog.png').convert_alpha()
@@ -194,27 +125,48 @@ class Dog(pygame.sprite.Sprite):
             self.original_image.fill((120, 20, 20))
         self.image = self.original_image
         self.platform = platform
-        self.offset_x = max(10, min(platform.rect.width - 20, platform.rect.width // 2))
+        lo, hi = platform.walk_range()
+        self.x = (lo + hi) / 2
         self.rect = self.image.get_rect()
-        self.rect.midbottom = (platform.rect.left + self.offset_x, platform.rect.top)
-        self.speed = random.uniform(20, 45) 
+        self.speed = random.uniform(20, 45) * speed_scale
         self.direction = random.choice([-1, 1])
+        self.fall_speed = None  # set once the branch snaps out from under the dog
+        self._stand()
 
-        if self.direction < 0:
-            self.image = pygame.transform.flip(self.original_image, True, False)
-        else:
-            self.image = self.original_image
+    def _stand(self):
+        y = self.platform.surface_under([self.x])
+        if y is None:
+            y = self.platform.rect.top
+        self.rect.midbottom = (int(self.x), int(y))
+
+    def shift(self, dx, dy):
+        # A standing dog re-plants itself on its branch each frame; only its x needs carrying along
+        self.x += dx
+        if self.fall_speed is not None:
+            self.rect.move_ip(dx, dy)
 
     def update(self, dt):
-        self.offset_x += self.direction * self.speed * dt
-        if self.offset_x < 10:
-            self.offset_x = 10
-            self.direction *= -1
-        if self.offset_x > self.platform.rect.width - 10:
-            self.offset_x = self.platform.rect.width - 10
-            self.direction *= -1
+        if self.fall_speed is None and getattr(self.platform, "broken", False):
+            self.fall_speed = 0.0
+            self.image = pygame.transform.flip(self.image, False, True)
+        if self.fall_speed is not None:
+            self.fall_speed += 1400 * dt
+            self.rect.y += self.fall_speed * dt
+            if self.rect.top > SCREEN_HEIGHT:
+                self.kill()
+            return
 
-        self.rect.midbottom = (self.platform.rect.left + int(self.offset_x), self.platform.rect.top)
+        lo, hi = self.platform.walk_range()
+        self.x += self.direction * self.speed * dt
+        if self.x < lo:
+            self.x = lo
+            self.direction = 1
+        if self.x > hi:
+            self.x = hi
+            self.direction = -1
+
+        self._stand()
+        self.platform.apply_load(self.x, DOG_WEIGHT)
 
         if self.direction < 0:
             self.image = pygame.transform.flip(self.original_image, True, False)
@@ -222,40 +174,32 @@ class Dog(pygame.sprite.Sprite):
             self.image = self.original_image
 
 class Eagle(pygame.sprite.Sprite):
-    def __init__(self, kitty):
+    def __init__(self, kitty, speed_scale=1.0):
         super().__init__()
         try:
             img = pygame.image.load('assets/Flying_Eagle.png').convert_alpha()
-            # Scale accordingly
             self.original_image = pygame.transform.smoothscale(img, (120, 80))
         except Exception:
             self.original_image = pygame.Surface((120, 80), pygame.SRCALPHA)
             self.original_image.fill((100, 100, 0)) # Placeholder color
 
-        # Determine side to swoop in from (left or right)
+        # Determine side to swoop in from
         self.side = random.choice(['left', 'right'])
         
-        # Set starting position based on side
-        start_y = random.randint(100, SCREEN_HEIGHT // 2) # Start from upper half
+        start_y = random.randint(100, SCREEN_HEIGHT // 2)
         if self.side == 'left':
             self.rect = self.original_image.get_rect(midright=(0, start_y))
-            self.velocity_x = random.randint(150, 250)
+            self.velocity_x = random.randint(150, 250) * speed_scale
             self.image = self.original_image 
         else:
             self.rect = self.original_image.get_rect(midleft=(SCREEN_WIDTH, start_y))
-            self.velocity_x = random.randint(-250, -150)
-            # Flip image to face left
+            self.velocity_x = random.randint(-250, -150) * speed_scale
             self.image = pygame.transform.flip(self.original_image, True, False)
 
-        # Target kitty's current position roughly? NO, just swoop across
-        # Actually, let's target kitty slightly
         self.target_y = kitty.rect.y
         self.velocity_y = (self.target_y - start_y) / (SCREEN_WIDTH / abs(self.velocity_x)) 
-        
-        # Cap vertical velocity so it doesn't dive too steep
         self.velocity_y = max(-100, min(100, self.velocity_y))
         
-        # Ensure the sprite is facing the direction of travel
         if self.velocity_x < 0:
             self.image = self.original_image
         else:
@@ -265,7 +209,6 @@ class Eagle(pygame.sprite.Sprite):
         self.rect.x += self.velocity_x * dt
         self.rect.y += self.velocity_y * dt
 
-        # Kill if off screen
         if (self.velocity_x > 0 and self.rect.left > SCREEN_WIDTH) or \
            (self.velocity_x < 0 and self.rect.right < 0):
             self.kill()
