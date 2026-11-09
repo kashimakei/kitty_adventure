@@ -1,0 +1,260 @@
+{
+  "scale": 0.3096774193548387,
+  "animations": {
+    "sniff": [
+      "sniff_0.png",
+      "sniff_1.png",
+      "sniff_2.png",
+      "sniff_3.png",
+      "sniff_4.png",
+      "sniff_5.png"
+    ],
+    "menace": [
+      "menace_0.png",
+      "menace_1.png",
+      "menace_2.png",
+      "menace_3.png",
+      "menace_4.png",
+      "menace_5.png"
+    ],
+    "bark": [
+      "bark_0.png",
+      "bark_1.png",
+      "bark_2.png",
+      "bark_3.png",
+      "bark_4.png",
+      "bark_5.png"
+    ],
+    "scratch": [
+      "scratch_0.png",
+      "scratch_1.png",
+      "scratch_2.png",
+      "scratch_3.png",
+      "scratch_4.png",
+      "scratch_5.png"
+    ],
+    "prep": [
+      "prep_0.png",
+      "prep_1.png",
+      "prep_2.png",
+      "prep_3.png",
+      "prep_4.png"
+    ],
+    "air": [
+      "air_0.png",
+      "air_1.png",
+      "air_2.png",
+      "air_3.png",
+      "air_4.png"
+    ],
+    "land": [
+      "land_0.png",
+      "land_1.png",
+      "land_2.png",
+      "land_3.png",
+      "land_4.png"
+    ],
+    "run_a": [
+      "run_a_0.png",
+      "run_a_1.png",
+      "run_a_2.png",
+      "run_a_3.png"
+    ],
+    "run_b": [
+      "run_b_0.png",
+      "run_b_1.png",
+      "run_b_2.png",
+      "run_b_3.png"
+    ]
+  },
+  "anchors": {
+    "sniff_0.png": [
+      59,
+      95
+    ],
+    "sniff_1.png": [
+      63,
+      86
+    ],
+    "sniff_2.png": [
+      62,
+      85
+    ],
+    "sniff_3.png": [
+      68,
+      86
+    ],
+    "sniff_4.png": [
+      64,
+      88
+    ],
+    "sniff_5.png": [
+      58,
+      85
+    ],
+    "menace_0.png": [
+      57,
+      95
+    ],
+    "menace_1.png": [
+      62,
+      85
+    ],
+    "menace_2.png": [
+      58,
+      92
+    ],
+    "menace_3.png": [
+      58,
+      89
+    ],
+    "menace_4.png": [
+      57,
+      97
+    ],
+    "menace_5.png": [
+      57,
+      95
+    ],
+    "bark_0.png": [
+      56,
+      96
+    ],
+    "bark_1.png": [
+      66,
+      94
+    ],
+    "bark_2.png": [
+      55,
+      107
+    ],
+    "bark_3.png": [
+      57,
+      99
+    ],
+    "bark_4.png": [
+      60,
+      95
+    ],
+    "bark_5.png": [
+      58,
+      96
+    ],
+    "scratch_0.png": [
+      58,
+      96
+    ],
+    "scratch_1.png": [
+      70,
+      83
+    ],
+    "scratch_2.png": [
+      53,
+      100
+    ],
+    "scratch_3.png": [
+      54,
+      101
+    ],
+    "scratch_4.png": [
+      60,
+      101
+    ],
+    "scratch_5.png": [
+      55,
+      102
+    ],
+    "prep_0.png": [
+      57,
+      93
+    ],
+    "prep_1.png": [
+      65,
+      84
+    ],
+    "prep_2.png": [
+      64,
+      80
+    ],
+    "prep_3.png": [
+      76,
+      91
+    ],
+    "prep_4.png": [
+      66,
+      99
+    ],
+    "air_0.png": [
+      63,
+      109
+    ],
+    "air_1.png": [
+      72,
+      111
+    ],
+    "air_2.png": [
+      76,
+      81
+    ],
+    "air_3.png": [
+      72,
+      100
+    ],
+    "air_4.png": [
+      68,
+      92
+    ],
+    "land_0.png": [
+      60,
+      91
+    ],
+    "land_1.png": [
+      63,
+      87
+    ],
+    "land_2.png": [
+      91,
+      59
+    ],
+    "land_3.png": [
+      63,
+      97
+    ],
+    "land_4.png": [
+      51,
+      97
+    ],
+    "run_a_0.png": [
+      111,
+      79
+    ],
+    "run_a_1.png": [
+      82,
+      89
+    ],
+    "run_a_2.png": [
+      73,
+      83
+    ],
+    "run_a_3.png": [
+      66,
+      78
+    ],
+    "run_b_0.png": [
+      81,
+      83
+    ],
+    "run_b_1.png": [
+      82,
+      86
+    ],
+    "run_b_2.png": [
+      75,
+      100
+    ],
+    "run_b_3.png": [
+      84,
+      81
+    ]
+  }
+}

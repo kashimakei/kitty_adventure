@@ -1,0 +1,239 @@
+{
+  "scale": 0.35036496350364965,
+  "animations": {
+    "walk": [
+      "walk_0.png",
+      "walk_1.png",
+      "walk_2.png",
+      "walk_3.png"
+    ],
+    "jump_prep": [
+      "jump_prep_0.png",
+      "jump_prep_1.png"
+    ],
+    "mid_jump": [
+      "mid_jump_0.png",
+      "mid_jump_1.png",
+      "mid_jump_2.png"
+    ],
+    "dangle": [
+      "dangle_0.png",
+      "dangle_1.png"
+    ],
+    "clean": [
+      "clean_0.png",
+      "clean_1.png",
+      "clean_2.png"
+    ],
+    "run": [
+      "run_0.png",
+      "run_1.png",
+      "run_2.png"
+    ],
+    "sleep": [
+      "sleep_0.png",
+      "sleep_1.png"
+    ],
+    "run_start": [
+      "run_start_0.png"
+    ],
+    "land": [
+      "land_0.png",
+      "land_1.png",
+      "land_2.png"
+    ],
+    "sit": [
+      "sit_0.png"
+    ],
+    "wave": [
+      "wave_0.png"
+    ],
+    "groom": [
+      "groom_0.png",
+      "groom_1.png"
+    ],
+    "sit_alert": [
+      "sit_alert_0.png"
+    ],
+    "hang": [
+      "hang_0.png",
+      "hang_1.png",
+      "hang_2.png",
+      "hang_3.png"
+    ],
+    "let_go": [
+      "let_go_0.png",
+      "let_go_1.png"
+    ],
+    "climb": [
+      "climb_0.png",
+      "climb_1.png",
+      "climb_2.png",
+      "climb_3.png",
+      "climb_4.png",
+      "climb_5.png"
+    ]
+  },
+  "anchors": {
+    "walk_0.png": [
+      91,
+      95
+    ],
+    "walk_1.png": [
+      85,
+      95
+    ],
+    "walk_2.png": [
+      54,
+      93
+    ],
+    "walk_3.png": [
+      90,
+      91
+    ],
+    "jump_prep_0.png": [
+      86,
+      84
+    ],
+    "jump_prep_1.png": [
+      82,
+      90
+    ],
+    "mid_jump_0.png": [
+      63,
+      99
+    ],
+    "mid_jump_1.png": [
+      83,
+      96
+    ],
+    "mid_jump_2.png": [
+      84,
+      106
+    ],
+    "dangle_0.png": [
+      42,
+      147
+    ],
+    "dangle_1.png": [
+      40,
+      144
+    ],
+    "clean_0.png": [
+      73,
+      104
+    ],
+    "clean_1.png": [
+      74,
+      104
+    ],
+    "clean_2.png": [
+      71,
+      103
+    ],
+    "run_0.png": [
+      103,
+      86
+    ],
+    "run_1.png": [
+      108,
+      86
+    ],
+    "run_2.png": [
+      92,
+      89
+    ],
+    "sleep_0.png": [
+      55,
+      95
+    ],
+    "sleep_1.png": [
+      60,
+      90
+    ],
+    "run_start_0.png": [
+      112,
+      86
+    ],
+    "land_0.png": [
+      67,
+      91
+    ],
+    "land_1.png": [
+      83,
+      91
+    ],
+    "land_2.png": [
+      70,
+      91
+    ],
+    "sit_0.png": [
+      61,
+      96
+    ],
+    "wave_0.png": [
+      65,
+      95
+    ],
+    "groom_0.png": [
+      74,
+      87
+    ],
+    "groom_1.png": [
+      67,
+      86
+    ],
+    "sit_alert_0.png": [
+      62,
+      96
+    ],
+    "hang_0.png": [
+      55,
+      1
+    ],
+    "hang_1.png": [
+      60,
+      0
+    ],
+    "hang_2.png": [
+      63,
+      0
+    ],
+    "hang_3.png": [
+      59,
+      0
+    ],
+    "let_go_0.png": [
+      38,
+      142
+    ],
+    "let_go_1.png": [
+      40,
+      144
+    ],
+    "climb_0.png": [
+      57,
+      146
+    ],
+    "climb_1.png": [
+      67,
+      145
+    ],
+    "climb_2.png": [
+      95,
+      126
+    ],
+    "climb_3.png": [
+      54,
+      145
+    ],
+    "climb_4.png": [
+      77,
+      94
+    ],
+    "climb_5.png": [
+      60,
+      98
+    ]
+  }
+}

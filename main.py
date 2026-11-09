@@ -14,7 +14,7 @@ from entities.kitty import Kitty
 from entities.platform import Platform, Dog, Leaf, Eagle
 from entities.tree import Tree
 from systems.camera import CameraSystem
-from level_utils import get_breeze_strength, difficulty_profile, generate_branches, tree_positions, setup_dog_spawn_candidates
+from level_utils import get_breeze_strength, difficulty_profile, generate_branches, tree_positions
 
 # ------------------ Initialization -------------------------
 pygame.init()
@@ -47,8 +47,8 @@ background_image = pygame.transform.scale(background_image, (background_width, 3
 splash_image = pygame.image.load('assets/Kitty_splash.png')
 splash_image = pygame.transform.scale(splash_image, (SCREEN_WIDTH, SCREEN_HEIGHT //2))
 
-kitty_mini = pygame.image.load("assets/kitty.png").convert_alpha()
-kitty_mini = pygame.transform.scale(kitty_mini, (40, 40))
+kitty_mini = pygame.image.load("assets/kitty/sit_0.png").convert_alpha()
+kitty_mini = pygame.transform.smoothscale_by(kitty_mini, 40 / kitty_mini.get_height())
 
 # Load Sounds
 hiss_sound = pygame.mixer.Sound('assets/hiss.wav')
@@ -62,7 +62,7 @@ mixer.music.play(-1)  # Loop music
 
 # Game State Variables
 max_levels = 10
-current_level = 1
+current_level = 9
 current_difficulty = 2
 level_complete = False
 lives = 3
@@ -81,7 +81,6 @@ trees = []
 branches = []
 
 # Other State
-dog_candidate_platforms = []
 profile = difficulty_profile(current_level, current_difficulty)
 next_dog_spawn_time = 0
 next_eagle_spawn_time = 0
@@ -128,43 +127,15 @@ def initialize_leaves():
         leaves.add(leaf)
 
 def spawn_dog():
-    global dog_candidate_platforms
-    
-    # Cap concurrent dogs
+    """A dog trots in somewhere on the ground that's off-screen and well away from Kitty."""
     if len(dogs) >= profile["max_dogs"]:
         return
-    if not dog_candidate_platforms:
-        return
-
-    occupied_indices = [getattr(d.platform, "spawn_index", None) for d in dogs]
-
-    def allowed(p):
-        if p.broken or any(getattr(d, "platform", None) is p for d in dogs):
-            return False
-        if p.rect.colliderect(kitty.rect):
-            return False
-        idx = getattr(p, "spawn_index", None)
-        if idx is None:
-            return True
-        for occ in occupied_indices:
-            if occ is None: continue
-            if abs(idx - occ) <= 1:
-                return False
-        return True
-
-    spawn_buffer = 50
-    def offscreen(p):
-        return (p.rect.bottom < -spawn_buffer or p.rect.right < -spawn_buffer
-                or p.rect.left > SCREEN_WIDTH + spawn_buffer)
-    offscreen_candidates = [p for p in dog_candidate_platforms if offscreen(p) and allowed(p)]
-    
-    candidates = offscreen_candidates
-    if not candidates:
-        return
-
-    platform = random.choice(candidates)
-    dog = Dog(platform, profile["dog_speed"])
-    dogs.add(dog)
+    ground = next(p for p in platforms if p.is_ground)
+    left, right = ground.walk_range()
+    spots = [x for x in (random.uniform(left, right) for _ in range(12))
+             if (x < -60 or x > SCREEN_WIDTH + 60) and abs(x - kitty.rect.centerx) > 300]
+    if spots:
+        dogs.add(Dog(ground, branches, kitty, spots[0], profile["dog_speed"]))
 
 def spawn_eagle_logic():
     global next_eagle_spawn_time
@@ -181,14 +152,9 @@ def spawn_eagle_logic():
     next_eagle_spawn_time = pygame.time.get_ticks() + wait_time
 
 def restart_current_level(regenerate=False):
-    global level_complete, dog_candidate_platforms, next_dog_spawn_time, next_eagle_spawn_time, kitty, current_level, lives, trees, branches, profile
+    global level_complete, next_dog_spawn_time, next_eagle_spawn_time, kitty, current_level, lives, trees, branches, profile
 
     camera_sys.reset()
-    kitty.rect.midbottom = (SCREEN_WIDTH // 2, SCREEN_HEIGHT - 50)
-    kitty.velocity = 0
-    kitty.falling = False
-    kitty.jump = False
-    kitty.standing_on = None
     level_complete = False
 
     max_plats = 11 if current_level == 1 else 10
@@ -208,8 +174,8 @@ def restart_current_level(regenerate=False):
         ground = create_ground()
         platforms.add(ground)
         
-        # Recompute candidates
-        dog_candidate_platforms = setup_dog_spawn_candidates(branches, SCREEN_HEIGHT)
+    ground = next(p for p in platforms if p.is_ground)
+    kitty.respawn((SCREEN_WIDTH // 2, ground.rect.top), ground)
 
     # Reset spawn time
     base = profile["dog_interval_ms"]
@@ -294,7 +260,7 @@ def draw_minimap():
 
 # ------------------ Main Game Loop ----------------------------
 def main_game():
-    global time_elapsed, level_complete, lives, next_dog_spawn_time, next_eagle_spawn_time, kitty, dog_candidate_platforms
+    global time_elapsed, level_complete, lives, next_dog_spawn_time, next_eagle_spawn_time, kitty
     
     # Init Kitty
     kitty = Kitty(meow_sounds)
@@ -317,7 +283,11 @@ def main_game():
                 sys.exit()
             elif event.type == KEYDOWN:
                 if event.key == K_SPACE:
-                    kitty.do_jump()
+                    kitty.do_jump()  # also hauls Kitty up when hanging from a branch
+                elif event.key == K_UP:
+                    kitty.climb_up()
+                elif event.key == K_DOWN:
+                    kitty.let_go()
             elif event.type == KEYUP:
                 if event.key == K_SPACE:
                     kitty.stop_jump()
@@ -327,6 +297,7 @@ def main_game():
 
         # Kitty rides (and weighs down) the branch underfoot, or lands on one
         landed_on = kitty.resolve_supports(supports())
+        kitty.animate(dt)
 
         # Update platforms
         for platform in platforms:
@@ -436,13 +407,12 @@ def main_game():
                 screen.blit(platform.image, platform.rect)
 
         for dog in dogs:
-            if -100 < dog.rect.top < SCREEN_HEIGHT + 100:
-                screen.blit(dog.image, dog.rect)
+            dog.draw(screen)
 
-        screen.blit(kitty.image, kitty.rect)
+        kitty.draw(screen)
 
         for eagle in eagles:
-            screen.blit(eagle.image, eagle.rect)
+            eagle.draw(screen)
 
         draw_hud()
         pygame.display.flip()

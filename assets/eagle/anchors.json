@@ -1,0 +1,88 @@
+{
+  "scale": 0.3597122302158273,
+  "animations": {
+    "flap": [
+      "flap_0.png",
+      "flap_1.png",
+      "flap_2.png",
+      "flap_3.png",
+      "flap_4.png"
+    ],
+    "dive": [
+      "dive_0.png",
+      "dive_1.png",
+      "dive_2.png",
+      "dive_3.png",
+      "dive_4.png"
+    ],
+    "talon": [
+      "talon_0.png",
+      "talon_1.png",
+      "talon_2.png",
+      "talon_3.png",
+      "talon_4.png"
+    ]
+  },
+  "anchors": {
+    "flap_0.png": [
+      93,
+      83
+    ],
+    "flap_1.png": [
+      126,
+      66
+    ],
+    "flap_2.png": [
+      119,
+      37
+    ],
+    "flap_3.png": [
+      113,
+      47
+    ],
+    "flap_4.png": [
+      117,
+      81
+    ],
+    "dive_0.png": [
+      132,
+      69
+    ],
+    "dive_1.png": [
+      129,
+      68
+    ],
+    "dive_2.png": [
+      82,
+      104
+    ],
+    "dive_3.png": [
+      94,
+      104
+    ],
+    "dive_4.png": [
+      132,
+      76
+    ],
+    "talon_0.png": [
+      130,
+      74
+    ],
+    "talon_1.png": [
+      128,
+      74
+    ],
+    "talon_2.png": [
+      140,
+      66
+    ],
+    "talon_3.png": [
+      129,
+      76
+    ],
+    "talon_4.png": [
+      137,
+      66
+    ]
+  }
+}

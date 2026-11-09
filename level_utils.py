@@ -150,36 +150,3 @@ def generate_branches(max_branches, world_width, screen_height, level=1, difficu
             if has_room(filler):
                 placed.append(filler)
     return placed
-
-def setup_dog_spawn_candidates(platforms, screen_height):
-    """Populate `dog_candidate_platforms` with platforms that are above 1/3 of the level height.
-    This computes the vertical span from bottom (SCREEN_HEIGHT) to the topmost platform and
-    selects platforms whose y is above the one-third threshold.
-    """
-    if not platforms:
-        return []
-    # Determine topmost platform y value
-    ys = [p.rect.y for p in platforms if not getattr(p, 'is_ground', False)]
-    if not ys:
-        return []
-    topmost = min(ys)
-    level_span = screen_height - topmost
-    if level_span <= 0:
-        return []
-
-    threshold = screen_height - (level_span * (1.0 / 3.0))
-    
-    # Candidate platforms: above the threshold, not ground, and strictly lower than the topmost platform
-    candidates = [
-        p for p in platforms 
-        if (p.rect.y < threshold 
-            and not getattr(p, 'is_ground', False) 
-            and p.rect.y > topmost)
-    ]
-    
-    # Sort candidates top-to-bottom and assign spawn index
-    candidates.sort(key=lambda p: p.rect.y)
-    for idx, p in enumerate(candidates):
-        p.spawn_index = idx
-        
-    return candidates

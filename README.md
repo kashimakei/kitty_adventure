@@ -43,10 +43,11 @@ Both scripts expect the `assets/` directory to be present in the repository root
 ## Project structure
 
 ```
-assets/      # images and sounds used by the games
+assets/      # images and sounds; source/ holds the sprite sheets, kitty/ the cut frames
 Engines/     # Rust soft-body branch physics (PyO3 module `branch_engine`)
 entities/    # Kitty, trees, bendy branches, dogs, eagles, leaves
 systems/     # camera, physics helpers, debug UI
+tools/       # asset pipeline (sprite sheet slicer)
 main.py      # main platformer starring a cat
 platformer   # simplified vertical jumping example
 ```
@@ -55,6 +56,22 @@ Branch feel (how much they bend, wobble and kick back) is tuned in the
 "Trees & Bendy Branches" section of `constants.py`. Pale, thin branches hold
 Kitty or a dog, but snap under both. Level difficulty (spacing, bendiness, wind
 and enemies) ramps up in `difficulty_profile()` in `level_utils.py`.
+
+Kitty's, the dogs' and the eagles' animations come from the painted sprite
+sheets in `assets/source/`. `python tools/slice_sprites.py` keys out their grey
+background, cuts each pose into `assets/kitty/`, `assets/dog/` and
+`assets/eagle/`, scales each character consistently across its sheets and records the point each frame is pinned by (feet, Kitty's
+gripping paw, or the eagle's head) in `anchors.json`. Re-run it after editing a
+sheet; add `--index <dir>` for numbered previews of every pose it finds. Which
+frames make up each move and when they play is set in `KITTY_CLIPS` /
+`Kitty.animate()` (`entities/kitty.py`), and `DOG_CLIPS` / `Dog` and
+`EAGLE_CLIPS` / `Eagle` (`entities/platform.py`).
+
+Controls: arrows to walk, Space to jump. Fall just short of a branch and Kitty
+catches it by the paws: Left/Right shimmy along, Space or Up climbs on, Down
+lets go. Eagles glide with their wings set for a moment before they dive, so
+that's the cue to get moving. Dogs roam the ground: they snarl before they
+charge, bark at Kitty overhead, and leap onto any branch low enough to reach.
 
 Levels are `WORLD_SCREENS` (3) screens wide: Kitty starts in the middle and the
 camera pans sideways as Kitty nears the edge of the screen. The bar in the HUD

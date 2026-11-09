@@ -48,7 +48,7 @@ class CameraSystem:
             leaf.x += dx
             leaf.y += dy
         for eagle in eagles:
-            eagle.rect.move_ip(dx, dy)
+            eagle.shift(dx, dy)
 
     def reset(self):
         self.offset = 0

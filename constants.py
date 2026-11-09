@@ -62,3 +62,33 @@ MAX_FRAME_DT = 1 / 30        # physics never steps more than this, even after a 
 TREE_SPACING = 270           # rough distance between trunks; adjusted so trees fill the world evenly
 MAX_BRANCH_HOP = 150         # widest sideways gap between one path branch and the next
 FILLERS_PER_PATH_BRANCH = 2  # attempts at an extra branch near each path branch
+
+# Hanging & climbing: Kitty catches a branch by the paws when a jump falls just short
+GRAB_REACH = 22             # px below the top of Kitty's hitbox where the raised paws are
+GRIP_DEPTH = 4              # px the gripping paw wraps over the top of the branch
+HANG_SHIMMY = 2             # px/frame Kitty can shuffle along while hanging
+CLIMB_FRAMES = 33           # frames (at 60fps) to haul up onto the branch
+REGRAB_DELAY = 0.4          # seconds after letting go before the same branch can be caught again
+
+# Eagles cruise across, swoop once at Kitty if Kitty is ahead and below, then pull away
+EAGLE_HITBOX = (100, 72)
+EAGLE_HEAD_OFFSET = (42, -15)  # where the head sits relative to the hitbox centre, facing right
+EAGLE_SWOOP_RANGE = 280        # px ahead at which an eagle commits to a swoop
+EAGLE_SWOOP_SPEED = 340        # px/s, scaled by the level's eagle speed
+EAGLE_WINDUP = 0.35            # seconds an eagle glides, wings set, before diving: the player's cue
+EAGLE_HOMING = 0.6             # rad/s an eagle can bend its swoop; low enough to dodge
+EAGLE_SWOOP_TIME = 1.4         # seconds before a swoop gives up
+
+# Dogs live on the ground and can leap onto low branches
+DOG_HITBOX = (80, 64)
+DOG_WALK_SPEED = 45          # px/s sniffing along, scaled by the level's dog speed
+DOG_CHARGE_SPEED = 190       # px/s galloping at Kitty
+DOG_GRAVITY = 1800           # px/s^2
+DOG_JUMP_HEIGHT = 170        # tallest leap, feet to branch top
+DOG_SIGHT = 260              # px; Kitty this close on the same level gets snarled at, then chased
+DOG_SNARL_TIME = 0.5         # seconds of snarling before the charge: the player's cue
+DOG_BARK_RANGE = 160         # px sideways; Kitty above and within this gets barked at
+DOG_BARK_BEFORE_JUMP = 0.8   # seconds of barking before leaping up at Kitty's branch
+DOG_SCRATCH_EVERY = (5.0, 10.0)
+DOG_EXPLORE_CHANCE = 0.15    # per second, while under a low branch, of hopping up to look around
+DOG_BRANCH_STAY = (4.0, 8.0)  # seconds a wandering dog stays up a branch before hopping down
