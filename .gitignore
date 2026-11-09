@@ -153,3 +153,19 @@ cython_debug/
 .vscode/
 .idea/
 *.swp
+
+# Maturin build output
+target/
+dist/
+build/
+
+# Compiled Python extension
+*.so
+*.pyd
+*.dll
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
