@@ -300,34 +300,66 @@ impl Limb {
         self.draw_decorations(assets, true, time, breeze);
     }
 
-    /// The wood: a filled outline of the truss, with a sunlit ridge along the walkable top.
-    pub fn draw(&self) {
-        let segments = self.segments();
-        let fill = if self.breakable() { BARK_YOUNG } else { BARK };
-        let gap = self.branch.broken_at;
-        for i in 0..segments {
-            if gap == Some(i) {
-                continue;
+    /// Smoothed outline of columns `from..=to`: Catmull-Rom curves through the top nodes and
+    /// through the bottom nodes, sampled at matching points so they pair up across the wood.
+    /// The curves pass through every node, so the top edge stays on the walkable surface.
+    fn piece(&self, from: usize, to: usize, start: End, end: End) -> Piece {
+        let mut piece = Piece { start, end, ..Piece::default() };
+        self.sample_edge(0, from, to, &mut piece.top);
+        self.sample_edge(self.branch.segments + 1, from, to, &mut piece.bottom);
+        let seg = self.branch.segment_len;
+        for i in from..to {
+            for k in 0..SAMPLES {
+                piece.along.push((i as f32 + k as f32 / SAMPLES as f32) * seg);
             }
-            let (t0, t1, b0, b1) = (self.top_point(i), self.top_point(i + 1), self.bottom_point(i), self.bottom_point(i + 1));
-            draw_triangle(t0, t1, b1, fill);
-            draw_triangle(t0, b1, b0, fill);
         }
-        for i in 0..segments {
-            if gap == Some(i) {
-                continue;
+        piece.along.push(to as f32 * seg);
+        piece
+    }
+
+    fn sample_edge(&self, offset: usize, from: usize, to: usize, out: &mut Vec<Vec2>) {
+        let node = |i: usize| {
+            let p = self.branch.nodes[offset + i].pos;
+            vec2(p.x, p.y)
+        };
+        // Past either end, carry straight on so the curve doesn't hook
+        let at = |i: isize| {
+            if i < from as isize {
+                2.0 * node(from) - node(from + 1)
+            } else if i > to as isize {
+                2.0 * node(to) - node(to - 1)
+            } else {
+                node(i as usize)
             }
-            let (t0, t1, b0, b1) = (self.top_point(i), self.top_point(i + 1), self.bottom_point(i), self.bottom_point(i + 1));
-            draw_line(t0.x, t0.y, t1.x, t1.y, 3.0, BARK_DARK);
-            draw_line(b0.x, b0.y, b1.x, b1.y, 2.0, BARK_DARK);
-            draw_line(t0.x, t0.y + 2.5, t1.x, t1.y + 2.5, 2.0, BARK_LIGHT);
+        };
+        for i in from..to {
+            let (p0, p1, p2, p3) = (at(i as isize - 1), node(i), node(i + 1), at(i as isize + 2));
+            for k in 0..SAMPLES {
+                out.push(catmull_rom(p0, p1, p2, p3, k as f32 / SAMPLES as f32));
+            }
         }
-        // Close off the tip
-        let (tip, tip_bottom) = (self.tip(), self.bottom_point(segments));
-        draw_line(tip.x, tip.y, tip_bottom.x, tip_bottom.y, 2.0, BARK_DARK);
-        if self.strain() > 0.5 && !self.broken() {
-            self.draw_cracks();
+        out.push(node(to));
+    }
+
+    /// The wood in one piece, or in two once it has snapped.
+    fn add_pieces(&self, id: LimbId, out: &mut Vec<(LimbId, Piece)>) {
+        let n = self.segments();
+        match self.branch.broken_at {
+            None => out.push((id, self.piece(0, n, End::Hidden, End::Round))),
+            Some(seg) => {
+                if seg >= 1 {
+                    out.push((id, self.piece(0, seg, End::Hidden, End::Snapped)));
+                }
+                if seg + 1 < n {
+                    out.push((id, self.piece(seg + 1, n, End::Snapped, End::Round)));
+                }
+            }
         }
+    }
+
+    /// Where along the grain texture this limb starts, so neighbours don't share a pattern.
+    fn grain_offset(&self) -> f32 {
+        16.0 + (self.wind_phase * 41.0) % 250.0
     }
 
     /// Jagged splits where the limb will snap, growing as it nears breaking.
@@ -345,4 +377,738 @@ impl Limb {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The wood. Each limb is drawn from smooth curves through its nodes: its shape grown outward in
+// dark bark for the outline, then a shaded, grained fill on top. A limb and its forks are drawn
+// together pass by pass (every outline, then every fill), so where a fork grows out of its
+// parent the two merge into one silhouette with no line between them, and a fillet rounds off
+// each corner of the join.
+
+/// Smoothed samples per physics segment.
+const SAMPLES: usize = 4;
+/// How far the dark outline reaches outside the wood.
+const OUTLINE: f32 = 2.2;
+/// A tip's rounded end reaches this many times its half-thickness past the last node.
+const TIP_STRETCH: f32 = 1.3;
+const TIP_STEPS: usize = 8;
+/// A snapped end's splinters, as shares of how far they poke out past the break.
+const SPLINTERS: [f32; 7] = [0.35, 0.95, 0.2, 1.0, 0.5, 0.8, 0.15];
+const FILLET_STEPS: usize = 6;
+/// Below the parent's top edge, a fork's root fades into the parent's wood over this depth.
+const FORK_BLEND: f32 = 5.0;
+/// How far into the trunk a limb's wood fades out, across the trunk's dark edge.
+const ROOT_BLEND: f32 = 7.0;
+/// Rows of vertices across the wood, top edge to underside, for the shading.
+const ROWS: usize = 5;
+/// Where the rows sit across the thin wood near a tip (thicker wood keeps its sunlit edge just
+/// as narrow; see `row_fractions`).
+const ROW_STOPS: [f32; ROWS] = [0.0, 0.16, 0.42, 0.72, 1.0];
+
+const GRAIN_W: u16 = 512;
+const GRAIN_H: u16 = 32;
+/// Plain white texels along the top and left of the grain texture, for flat-coloured shapes.
+const GRAIN_PLAIN_ROWS: f32 = 2.0;
+const PLAIN: Vec2 = Vec2::new(0.5 / GRAIN_W as f32, 0.5 / GRAIN_H as f32);
+/// Keep each mesh comfortably inside macroquad's per-draw-call limits.
+const MESH_VERTICES: usize = 4000;
+const MESH_INDICES: usize = 4800;
+
+/// Bark grain running along the limbs: white, so the mesh's colours show through, with faint
+/// darker streaks that follow the wood's curves and taper with it toward the tip.
+pub fn make_grain_texture() -> Texture2D {
+    let (w, h) = (GRAIN_W as u32, GRAIN_H as u32);
+    let mut image = Image::gen_image_color(GRAIN_W, GRAIN_H, WHITE);
+    let mut rng = Rng::new(0xB4C4);
+    for _ in 0..160 {
+        let y0 = rng.range(GRAIN_PLAIN_ROWS + 1.5, h as f32 - 1.5);
+        let x0 = rng.int(8, w as i32 - 20);
+        let len = rng.int(14, 80);
+        let dark = rng.range(0.08, 0.22);
+        let wobble = rng.range(0.0, 6.3);
+        for dx in 0..len {
+            let x = (x0 + dx) as u32;
+            if x >= w {
+                break;
+            }
+            let y = (y0 + (dx as f32 * 0.07 + wobble).sin() * 0.9).round().clamp(GRAIN_PLAIN_ROWS + 1.0, h as f32 - 1.0) as u32;
+            // Streaks fade in and out at their ends
+            let ends = (dx.min(len - 1 - dx) as f32 / 6.0).min(1.0);
+            let s = 1.0 - dark * ends;
+            let c = image.get_pixel(x, y);
+            image.set_pixel(x, y, Color::new(c.r * s, c.g * s, c.b * s, 1.0));
+        }
+    }
+    let texture = Texture2D::from_image(&image);
+    texture.set_filter(FilterMode::Linear);
+    texture
+}
+
+/// How a piece of wood ends.
+#[derive(Clone, Copy, PartialEq, Default)]
+enum End {
+    /// Out of sight: under the trunk's bark, or inside the parent's wood for a fork.
+    #[default]
+    Hidden,
+    /// A rounded tip.
+    Round,
+    /// Splintered, where it snapped.
+    Snapped,
+}
+
+/// One piece of wood (a whole limb, or one side of where it snapped), smoothed: matching samples
+/// along its top and bottom edges from base to tip, with the normals pointing out of the wood.
+#[derive(Default)]
+struct Piece {
+    top: Vec<Vec2>,
+    bottom: Vec<Vec2>,
+    top_n: Vec<Vec2>,
+    bottom_n: Vec<Vec2>,
+    /// How far each sample is from the limb's base, so the grain stays put on the wood.
+    along: Vec<f32>,
+    start: End,
+    end: End,
+}
+
+impl Piece {
+    fn finish(&mut self) {
+        outward_normals(&self.top, &self.bottom, &mut self.top_n);
+        outward_normals(&self.bottom, &self.top, &mut self.bottom_n);
+    }
+
+    /// The way the wood runs at sample `k`, base to tip.
+    fn forward(&self, k: usize) -> Vec2 {
+        let last = self.top.len() - 1;
+        let (a, b) = if k == 0 { (0, 1) } else { (k - 1, k.min(last)) };
+        (self.top[b] - self.top[a] + self.bottom[b] - self.bottom[a]).normalize_or_zero()
+    }
+
+    /// The rounded tip or splintered break closing one end, if that end shows.
+    fn cap(&self, at_end: bool, reach: f32, phase: usize) -> Option<Cap> {
+        let kind = if at_end { self.end } else { self.start };
+        let k = if at_end { self.top.len() - 1 } else { 0 };
+        let (top, bottom) = (self.top[k], self.bottom[k]);
+        let out = if at_end { self.forward(k) } else { -self.forward(k) };
+        let mid = (top + bottom) * 0.5;
+        let r = (top - mid).length();
+        if kind == End::Hidden || r < 0.05 || out == Vec2::ZERO {
+            return None;
+        }
+        let mut chain = vec![CapPoint { pos: top, normal: self.top_n[k], f: 0.0 }];
+        if kind == End::Round {
+            let across = (top - mid) / r;
+            let ahead = (out - across * out.dot(across)).normalize_or_zero();
+            for j in 1..TIP_STEPS {
+                let (s, c) = (std::f32::consts::PI * j as f32 / TIP_STEPS as f32).sin_cos();
+                let pos = mid + across * (r * c) + ahead * (r * TIP_STRETCH * s);
+                chain.push(CapPoint { pos, normal: Vec2::ZERO, f: (1.0 - c) * 0.5 });
+            }
+        } else {
+            let n = SPLINTERS.len();
+            for j in 0..n {
+                let f = (j + 1) as f32 / (n + 1) as f32;
+                let pos = top.lerp(bottom, f) + out * (SPLINTERS[(j + phase) % n] * reach);
+                chain.push(CapPoint { pos, normal: Vec2::ZERO, f });
+            }
+        }
+        chain.push(CapPoint { pos: bottom, normal: self.bottom_n[k], f: 1.0 });
+        miter_normals(&mut chain, out);
+        // The fan's centre sits a hair inside the wood so it overlaps the body seamlessly
+        Some(Cap { centre: mid - out * 0.75, chain, along: self.along[k], out, snapped: kind == End::Snapped })
+    }
+}
+
+struct CapPoint {
+    pos: Vec2,
+    /// Outward, scaled so offsetting by it keeps the outline an even width round corners.
+    normal: Vec2,
+    /// How far across the wood, 0 at the top edge to 1 underneath.
+    f: f32,
+}
+
+/// The end of a piece beyond its last cross-section, from its top corner round to its bottom one.
+struct Cap {
+    centre: Vec2,
+    chain: Vec<CapPoint>,
+    along: f32,
+    out: Vec2,
+    snapped: bool,
+}
+
+/// A curved patch filling the corner where a fork's edge meets its parent's, so the join looks
+/// grown rather than stuck on.
+struct Fillet {
+    corner: Vec2,
+    /// Points along the curve with their outward normals.
+    curve: [(Vec2, Vec2); FILLET_STEPS + 1],
+    /// Colours at the curve's two ends and in the corner.
+    colors: [Color; 3],
+}
+
+impl Fillet {
+    /// A curve from `a` to `b` that leaves each tangent to the edge it starts on (both run
+    /// straight into `corner`).
+    fn new(a: Vec2, corner: Vec2, b: Vec2, colors: [Color; 3]) -> Self {
+        let at = |t: f32| a * (1.0 - t) * (1.0 - t) + corner * 2.0 * t * (1.0 - t) + b * t * t;
+        let slope = |t: f32| (corner - a) * 2.0 * (1.0 - t) + (b - corner) * 2.0 * t;
+        // Outward is away from the corner; keep to that side all along the curve
+        let side = if slope(0.5).perp().dot(at(0.5) - corner) >= 0.0 { 1.0 } else { -1.0 };
+        let mut curve = [(Vec2::ZERO, Vec2::ZERO); FILLET_STEPS + 1];
+        for (j, point) in curve.iter_mut().enumerate() {
+            let t = j as f32 / FILLET_STEPS as f32;
+            *point = (at(t), slope(t).perp().normalize_or_zero() * side);
+        }
+        Self { corner, curve, colors }
+    }
+}
+
+/// Which way a fork leaves its parent's wood. Forks are aimed upward, but one sprouting where
+/// its parent climbs more steeply drops out through the parent's underside instead, or runs
+/// along inside it.
+#[derive(Clone, Copy, PartialEq)]
+enum Emerges {
+    /// Up through the parent's top edge.
+    Up,
+    /// Down through the parent's underside.
+    Down,
+    /// Neither, or not clear of it.
+    Along,
+}
+
+impl Emerges {
+    fn find(fork: &Piece, parent: &Piece) -> Self {
+        let up = crosses(&fork.bottom, &parent.top, true).map(|(k, _)| k);
+        let down = crosses(&fork.top, &parent.bottom, false).map(|(k, _)| k);
+        match (up, down) {
+            (Some(u), Some(d)) if d < u => Emerges::Down,
+            (Some(_), _) => Emerges::Up,
+            (None, Some(_)) => Emerges::Down,
+            (None, None) => Emerges::Along,
+        }
+    }
+}
+
+/// Where a fork grows out of its parent.
+struct Join {
+    /// Indices into the family's pieces.
+    fork: usize,
+    parent: usize,
+    way: Emerges,
+    /// Distances along the fork from its base: before the first, any of it lying deep inside
+    /// the parent's wood is hidden; by the second it is drawn whole over the parent.
+    blend: (f32, f32),
+    fillets: Vec<Fillet>,
+}
+
+impl Join {
+    /// How opaque the fork is at sample `k`, point `p`, drawn over its parent.
+    fn opacity(&self, fork: &Piece, parent: &Piece, k: usize, p: Vec2) -> f32 {
+        let along = fork.along[k] - fork.along[0];
+        let t = ((along - self.blend.0) / (self.blend.1 - self.blend.0)).clamp(0.0, 1.0);
+        let shown = t * t * (3.0 - 2.0 * t);
+        if shown >= 1.0 {
+            return 1.0;
+        }
+        // Fade out inside the edge it grows through, so it seems to grow out of the wood
+        let depth = if self.way == Emerges::Down {
+            edge_y_at(&parent.bottom, p.x).map_or(f32::MIN, |y| y - p.y)
+        } else {
+            edge_y_at(&parent.top, p.x).map_or(f32::MIN, |y| p.y - y)
+        };
+        shown.max((1.0 - depth / FORK_BLEND).clamp(0.0, 1.0))
+    }
+}
+
+/// Colours down through the wood, top edge to underside.
+struct Palette {
+    rows: [Color; ROWS],
+}
+
+impl Palette {
+    fn for_limb(limb: &Limb) -> Self {
+        // Thin limbs that can snap are young wood: paler, with a hint of green
+        let (light, fill, shade) = if limb.breakable() {
+            (BARK_YOUNG_LIGHT, BARK_YOUNG, BARK_YOUNG_SHADE)
+        } else {
+            (BARK_LIGHT, BARK, BARK_SHADE)
+        };
+        Self { rows: [light, mix(light, fill, 0.5), fill, mix(fill, shade, 0.3), shade] }
+    }
+
+    /// The colour at `f` of the way from the top edge to the underside of thin wood.
+    fn at(&self, f: f32) -> Color {
+        let f = f.clamp(0.0, 1.0);
+        let i = ROW_STOPS.iter().rposition(|&s| s <= f).unwrap_or(0).min(ROWS - 2);
+        mix(self.rows[i], self.rows[i + 1], (f - ROW_STOPS[i]) / (ROW_STOPS[i + 1] - ROW_STOPS[i]))
+    }
+}
+
+/// Where the rows of shading sit across wood `width` thick: a narrow sunlit edge along the top
+/// (the same few pixels however thick the wood), the body, then shadow underneath.
+fn row_fractions(width: f32) -> [f32; ROWS] {
+    let width = width.max(0.5);
+    let light = (1.8 / width).min(ROW_STOPS[1]);
+    let body = (5.5 / width).clamp(light + 0.04, ROW_STOPS[2]);
+    [0.0, light, body, ROW_STOPS[3], 1.0]
+}
+
+/// Wood geometry gathered into one mesh. Everything shares the grain texture (flat colours use
+/// its plain corner), so the wood draws in very few batches.
+struct WoodMesh {
+    mesh: Mesh,
+}
+
+impl WoodMesh {
+    fn new(grain: &Texture2D) -> Self {
+        Self { mesh: Mesh { vertices: Vec::with_capacity(1024), indices: Vec::with_capacity(2048), texture: Some(grain.clone()) } }
+    }
+
+    /// Make room for a shape; returns the index its vertices start at.
+    fn start(&mut self, vertices: usize, indices: usize) -> u16 {
+        if self.mesh.vertices.len() + vertices > MESH_VERTICES || self.mesh.indices.len() + indices > MESH_INDICES {
+            self.flush();
+        }
+        self.mesh.vertices.len() as u16
+    }
+
+    fn vertex(&mut self, p: Vec2, uv: Vec2, color: Color) {
+        self.mesh.vertices.push(Vertex::new(p.x, p.y, 0.0, uv.x, uv.y, color));
+    }
+
+    fn triangle(&mut self, a: u16, b: u16, c: u16) {
+        self.mesh.indices.extend_from_slice(&[a, b, c]);
+    }
+
+    fn quad(&mut self, a: u16, b: u16, c: u16, d: u16) {
+        self.triangle(a, b, c);
+        self.triangle(a, c, d);
+    }
+
+    /// A fan from `centre` round `rim`.
+    fn fan(&mut self, centre: (Vec2, Vec2, Color), rim: impl ExactSizeIterator<Item = (Vec2, Vec2, Color)>) {
+        let n = rim.len();
+        if n < 2 {
+            return;
+        }
+        let first = self.start(n + 1, 3 * (n - 1));
+        self.vertex(centre.0, centre.1, centre.2);
+        for (p, uv, color) in rim {
+            self.vertex(p, uv, color);
+        }
+        for j in 0..n as u16 - 1 {
+            self.triangle(first, first + 1 + j, first + 2 + j);
+        }
+    }
+
+    fn flush(&mut self) {
+        if !self.mesh.indices.is_empty() {
+            draw_mesh(&self.mesh);
+        }
+        self.mesh.vertices.clear();
+        self.mesh.indices.clear();
+    }
+}
+
+/// After the trunks: bring each limb's wood back out over the trunk's dark edge where it leaves
+/// the bark, fading into the trunk, so the limb grows out of the trunk instead of having the
+/// trunk's edge drawn across it.
+pub fn draw_roots(limbs: &[Limb], visible: impl Fn(&Limb) -> bool, grain: &Texture2D) {
+    let mut mesh = WoodMesh::new(grain);
+    for limb in limbs.iter().filter(|l| l.attachment.is_none() && l.trunk_half > 0.0 && !l.broken() && visible(l)) {
+        // The root's first few columns are all the curve needs there
+        let mut piece = limb.piece(0, limb.segments().min(3), End::Hidden, End::Hidden);
+        piece.finish();
+        let dir = limb.direction;
+        let edge = limb.base().x + dir * limb.trunk_half;
+        // Signed distance outward past the trunk's edge
+        let out = |p: Vec2| (p.x - edge) * dir;
+        // From where the wood is wholly hidden in the trunk to where it's wholly out of it, so the
+        // overlay starts invisible and ends matching the wood beneath
+        let reach = |k: usize| (out(piece.top[k]).min(out(piece.bottom[k])), out(piece.top[k]).max(out(piece.bottom[k])));
+        let n = piece.top.len();
+        let first = (0..n).rev().find(|&k| reach(k).1 <= -ROOT_BLEND).unwrap_or(0);
+        let last = (first..n).find(|&k| reach(k).0 >= 0.0).unwrap_or(n - 1);
+        let fade = |_: usize, p: Vec2| ((out(p) + ROOT_BLEND) / (ROOT_BLEND - 1.0)).clamp(0.0, 1.0);
+        shade_piece(&mut mesh, &piece, &Palette::for_limb(limb), limb.grain_offset(), first..last + 1, Some(&fade));
+    }
+    mesh.flush();
+}
+
+/// Draw the wood of every visible limb. Each limb is drawn together with its forks, so they
+/// merge where they join; separate limbs keep their own outlines where they cross.
+pub fn draw_wood(limbs: &[Limb], visible: impl Fn(&Limb) -> bool, grain: &Texture2D) {
+    let mut root = Vec::with_capacity(limbs.len());
+    for (i, limb) in limbs.iter().enumerate() {
+        let r = match limb.attachment {
+            Some(a) if a.parent < i => root[a.parent],
+            _ => i,
+        };
+        root.push(r);
+    }
+    let mut mesh = WoodMesh::new(grain);
+    let mut family = Vec::new();
+    for r in 0..limbs.len() {
+        if root[r] != r {
+            continue;
+        }
+        family.clear();
+        family.extend((r..limbs.len()).filter(|&i| root[i] == r));
+        if family.iter().any(|&i| visible(&limbs[i])) {
+            draw_family(limbs, &family, &mut mesh);
+        }
+    }
+    mesh.flush();
+}
+
+fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh) {
+    let mut pieces: Vec<(LimbId, Piece)> = Vec::new();
+    for &id in family {
+        limbs[id].add_pieces(id, &mut pieces);
+    }
+    // A fork's base sits inside its parent's wood; keep its underside tucked in there too
+    let first_piece = |pieces: &[(LimbId, Piece)], id: LimbId| pieces.iter().position(|(l, _)| *l == id);
+    let mut forks = Vec::new();
+    for i in 0..pieces.len() {
+        let id = pieces[i].0;
+        let Some(attachment) = limbs[id].attachment else { continue };
+        if first_piece(&pieces, id) != Some(i) {
+            continue;
+        }
+        if let Some(p) = first_piece(&pieces, attachment.parent).filter(|&p| p < i) {
+            let (before, after) = pieces.split_at_mut(i);
+            let way = Emerges::find(&after[0].1, &before[p].1);
+            tuck_under(&mut after[0].1, &before[p].1, way, limbs[id].thickness);
+            forks.push((i, p, way));
+        }
+    }
+    for (_, piece) in &mut pieces {
+        piece.finish();
+    }
+    let palettes: Vec<Palette> = pieces.iter().map(|(id, _)| Palette::for_limb(&limbs[*id])).collect();
+    let joins: Vec<Join> = forks.iter().map(|&(fork, parent, way)| {
+        join(&pieces[fork].1, &pieces[parent].1, (fork, parent), way, limbs[pieces[fork].0].thickness, &palettes)
+    }).collect();
+    let caps: Vec<[Option<Cap>; 2]> = pieces.iter().enumerate().map(|(i, (id, piece))| {
+        let limb = &limbs[*id];
+        let reach = limb.branch.segment_len * 0.55;
+        let phase = (limb.wind_phase * 10.0) as usize + i * 3;
+        [piece.cap(false, reach, phase), piece.cap(true, reach, phase + 2)]
+    }).collect();
+
+    // Every outline first: the wood grown outward, in dark bark
+    for (i, (_, piece)) in pieces.iter().enumerate() {
+        outline_piece(mesh, piece, &caps[i]);
+    }
+    for fillet in joins.iter().flat_map(|j| &j.fillets) {
+        let rim = fillet.curve.iter().map(|&(p, n)| (p + n * OUTLINE, PLAIN, BARK_DARK));
+        mesh.fan((fillet.corner, PLAIN, BARK_DARK), rim);
+    }
+    // Forks' wood, which the parent then covers where it lies inside it
+    for join in &joins {
+        let (id, piece) = &pieces[join.fork];
+        shade_piece(mesh, piece, &palettes[join.fork], limbs[*id].grain_offset(), 0..piece.top.len(), None);
+        shade_caps(mesh, &caps[join.fork], &palettes[join.fork], limbs[*id].grain_offset());
+    }
+    // Every piece's wood in order (parents before their forks). A fork is drawn again over its
+    // parent, its root fading out below the parent's top edge so the two blend
+    for (i, (id, piece)) in pieces.iter().enumerate() {
+        let u0 = limbs[*id].grain_offset();
+        match joins.iter().find(|j| j.fork == i) {
+            Some(join) => {
+                let parent = &pieces[join.parent].1;
+                let fade = |k: usize, p: Vec2| join.opacity(piece, parent, k, p);
+                shade_piece(mesh, piece, &palettes[i], u0, 0..piece.top.len(), Some(&fade));
+            }
+            None => shade_piece(mesh, piece, &palettes[i], u0, 0..piece.top.len(), None),
+        }
+        shade_caps(mesh, &caps[i], &palettes[i], u0);
+    }
+    for fillet in joins.iter().flat_map(|j| &j.fillets) {
+        let rim = fillet.curve.iter().enumerate().map(|(j, &(p, _))| {
+            (p, PLAIN, mix(fillet.colors[0], fillet.colors[1], j as f32 / FILLET_STEPS as f32))
+        });
+        mesh.fan((fillet.corner, PLAIN, fillet.colors[2]), rim);
+    }
+    // Cracks in an overloaded thin limb, drawn over the wood
+    let strained: Vec<&Limb> = family.iter().map(|&id| &limbs[id]).filter(|l| l.strain() > 0.5 && !l.broken()).collect();
+    if !strained.is_empty() {
+        mesh.flush();
+        for limb in strained {
+            limb.draw_cracks();
+        }
+    }
+}
+
+/// The dark outline: the piece grown outward by `OUTLINE` all round.
+fn outline_piece(mesh: &mut WoodMesh, piece: &Piece, caps: &[Option<Cap>; 2]) {
+    let n = piece.top.len();
+    let first = mesh.start(2 * n, 6 * (n - 1));
+    for k in 0..n {
+        mesh.vertex(piece.top[k] + piece.top_n[k] * OUTLINE, PLAIN, BARK_DARK);
+        mesh.vertex(piece.bottom[k] + piece.bottom_n[k] * OUTLINE, PLAIN, BARK_DARK);
+    }
+    for k in 0..n as u16 - 1 {
+        let i = first + 2 * k;
+        mesh.quad(i, i + 2, i + 3, i + 1);
+    }
+    for cap in caps.iter().flatten() {
+        let rim = cap.chain.iter().map(|c| (c.pos + c.normal * OUTLINE, PLAIN, BARK_DARK));
+        mesh.fan((cap.centre, PLAIN, BARK_DARK), rim);
+    }
+}
+
+/// The wood's fill over `samples`: rows of vertices across it shade it from a sunlit top edge
+/// to a shadowed underside, with the grain running along it. `fade` gives a vertex's opacity.
+fn shade_piece(mesh: &mut WoodMesh, piece: &Piece, palette: &Palette, u0: f32, samples: std::ops::Range<usize>,
+               fade: Option<&dyn Fn(usize, Vec2) -> f32>) {
+    let n = samples.len();
+    if n < 2 {
+        return;
+    }
+    let first = mesh.start(ROWS * n, 6 * (ROWS - 1) * (n - 1));
+    for k in samples {
+        let (top, bottom) = (piece.top[k], piece.bottom[k]);
+        for (r, f) in row_fractions(top.distance(bottom)).into_iter().enumerate() {
+            let p = top.lerp(bottom, f);
+            let mut color = palette.rows[r];
+            if let Some(fade) = fade {
+                color.a = fade(k, p);
+            }
+            mesh.vertex(p, grain_uv(u0 + piece.along[k], f), color);
+        }
+    }
+    for k in 0..n as u16 - 1 {
+        let column = first + k * ROWS as u16;
+        for r in 0..ROWS as u16 - 1 {
+            let (a, b) = (column + r, column + ROWS as u16 + r);
+            mesh.quad(a, b, b + 1, a + 1);
+        }
+    }
+}
+
+/// Fill the rounded tip, or the pale, splintered wood where it snapped.
+fn shade_caps(mesh: &mut WoodMesh, caps: &[Option<Cap>; 2], palette: &Palette, u0: f32) {
+    for cap in caps.iter().flatten() {
+        let last = cap.chain.len() - 1;
+        let rim = cap.chain.iter().enumerate().map(|(j, c)| {
+            let color = if cap.snapped && j != 0 && j != last { WOOD_SPLINTER } else { palette.at(c.f) };
+            (c.pos, grain_uv(u0 + cap.along + (c.pos - cap.centre).dot(cap.out), c.f), color)
+        });
+        let centre = if cap.snapped { mix(WOOD_SPLINTER, palette.at(0.5), 0.4) } else { palette.at(0.5) };
+        mesh.fan((cap.centre, grain_uv(u0 + cap.along, 0.5), centre), rim);
+    }
+}
+
+/// Keep a fork's underside inside its parent's wherever the fork lies along the parent's wood
+/// (its base always does), so it can't poke out below as a stray knob or show its cut-off
+/// base. One that drops out through the parent's underside is let go gradually after its
+/// base, so it comes out smoothly.
+fn tuck_under(fork: &mut Piece, parent: &Piece, way: Emerges, thickness: f32) {
+    let base = fork.along[0];
+    for k in 0..fork.top.len() {
+        let Some(y) = edge_y_at(&parent.bottom, fork.bottom[k].x) else { continue };
+        let mut limit = y - OUTLINE - 1.0;
+        if way == Emerges::Down {
+            let s = (fork.along[k] - base) / (thickness * 2.5);
+            limit += thickness * s * s;
+        }
+        // Only while the fork's top is inside the parent; one bent right down below it is left be
+        let inside = ((limit - fork.top[k].y - 2.0) / 4.0).clamp(0.0, 1.0);
+        let b = fork.bottom[k].y;
+        fork.bottom[k].y = b + (smooth_min(b, limit, 4.0) - b) * inside;
+    }
+}
+
+/// The lesser of `a` and `b`, rounded off over `k` where they're close so curves stay smooth.
+fn smooth_min(a: f32, b: f32, k: f32) -> f32 {
+    let h = (k - (a - b).abs()).max(0.0) / k;
+    a.min(b) - h * h * k * 0.25
+}
+
+/// Where a fork comes out of its parent's wood: a fillet rounds off every corner where their
+/// outlines cross (the narrow crotch on the tip side, the wide corner on the trunk side, and
+/// any others an unusually bent fork makes), and the fork's root blends into the parent.
+fn join(fork: &Piece, parent: &Piece, (fork_index, parent_index): (usize, usize), way: Emerges, fork_thickness: f32,
+        palettes: &[Palette]) -> Join {
+    let size = (fork_thickness * 0.6).clamp(5.0, 12.0);
+    let (fork_colors, parent_colors) = (&palettes[fork_index].rows, &palettes[parent_index].rows);
+    let mut fillets = Vec::new();
+    for (fork_edge, fork_row) in [(&fork.top, 0), (&fork.bottom, ROWS - 1)] {
+        for (parent_edge, parent_row) in [(&parent.top, 0), (&parent.bottom, ROWS - 1)] {
+            for (fork_seg, parent_seg, corner) in intersections(fork_edge, parent_edge) {
+                // The corner to fill is the one outside both: between the stretch of each edge
+                // that leaves the other's wood
+                let fork_ahead = !inside(parent, walk(fork_edge, fork_seg, corner, 1.5, true));
+                let parent_ahead = !inside(fork, walk(parent_edge, parent_seg, corner, 1.5, true));
+                let a = walk(parent_edge, parent_seg, corner, size, parent_ahead);
+                let b = walk(fork_edge, fork_seg, corner, size, fork_ahead);
+                let (ca, cb) = (parent_colors[parent_row], fork_colors[fork_row]);
+                // A narrow crotch gets a shadowed crease
+                let angle = (a - corner).angle_between(b - corner).abs();
+                let crease = if angle.is_finite() { (1.0 - angle / std::f32::consts::FRAC_PI_2).clamp(0.0, 1.0) * 0.5 } else { 0.0 };
+                fillets.push(Fillet::new(a, corner, b, [ca, cb, mix(mix(ca, cb, 0.5), BARK_DARK, crease)]));
+            }
+        }
+    }
+    // Past the crotch the fork is clear of the parent; one that never comes clear instead comes
+    // into view along its length, over the parent, so its walkable top shows
+    let crotch = match way {
+        Emerges::Up => crosses(&fork.bottom, &parent.top, true),
+        Emerges::Down => crosses(&fork.top, &parent.bottom, false),
+        Emerges::Along => None,
+    };
+    let blend = match crotch {
+        Some((k, _)) => {
+            let at = fork.along[k + 1] - fork.along[0];
+            (at, at + fork_thickness)
+        }
+        None => (fork_thickness * 0.5, fork_thickness * 2.5),
+    };
+    Join { fork: fork_index, parent: parent_index, way, blend, fillets }
+}
+
+/// Every point where polylines `a` and `b` cross: the segment of each it lies on, and the point.
+fn intersections(a: &[Vec2], b: &[Vec2]) -> Vec<(usize, usize, Vec2)> {
+    let mut found: Vec<(usize, usize, Vec2)> = Vec::new();
+    // Only the stretch of `b` that comes anywhere near `a`
+    let bounds = |line: &[Vec2]| line.iter().fold((Vec2::MAX, Vec2::MIN), |(lo, hi), &p| (lo.min(p), hi.max(p)));
+    let (a_lo, a_hi) = bounds(a);
+    let near: Vec<usize> = (0..b.len() - 1).filter(|&j| {
+        let (lo, hi) = (b[j].min(b[j + 1]), b[j].max(b[j + 1]));
+        lo.x <= a_hi.x && hi.x >= a_lo.x && lo.y <= a_hi.y && hi.y >= a_lo.y
+    }).collect();
+    for i in 0..a.len() - 1 {
+        let (p, r) = (a[i], a[i + 1] - a[i]);
+        let (lo, hi) = (a[i].min(a[i + 1]), a[i].max(a[i + 1]));
+        for &j in &near {
+            let (q, s) = (b[j], b[j + 1] - b[j]);
+            let (q_lo, q_hi) = (b[j].min(b[j + 1]), b[j].max(b[j + 1]));
+            if q_hi.x < lo.x || q_lo.x > hi.x || q_hi.y < lo.y || q_lo.y > hi.y {
+                continue;
+            }
+            let denom = r.perp_dot(s);
+            if denom.abs() < 1e-6 {
+                continue;
+            }
+            let t = (q - p).perp_dot(s) / denom;
+            let u = (q - p).perp_dot(r) / denom;
+            if (0.0..1.0).contains(&t) && (0.0..1.0).contains(&u) {
+                let point = p + r * t;
+                if found.iter().all(|f| f.2.distance(point) > 1.0) {
+                    found.push((i, j, point));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Whether `p` lies within a piece's wood, between its top and bottom edges.
+fn inside(piece: &Piece, p: Vec2) -> bool {
+    match (edge_y_at(&piece.top, p.x), edge_y_at(&piece.bottom, p.x)) {
+        (Some(top), Some(bottom)) => p.y > top && p.y < bottom,
+        _ => false,
+    }
+}
+
+fn catmull_rom(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f32) -> Vec2 {
+    let (t2, t3) = (t * t, t * t * t);
+    0.5 * (2.0 * p1 + (p2 - p0) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (3.0 * p1 - p0 - 3.0 * p2 + p3) * t3)
+}
+
+/// Unit normals along `edge`, each pointing away from the matching point on `other`.
+fn outward_normals(edge: &[Vec2], other: &[Vec2], out: &mut Vec<Vec2>) {
+    let n = edge.len();
+    out.clear();
+    for k in 0..n {
+        let tangent = (edge[(k + 1).min(n - 1)] - edge[k.saturating_sub(1)]).normalize_or_zero();
+        let normal = tangent.perp();
+        out.push(if normal.dot(edge[k] - other[k]) < 0.0 { -normal } else { normal });
+    }
+}
+
+/// Outward normals for a cap's corners, scaled (mitred) so the outline keeps its width round
+/// each bend. `out` is the side the cap bulges toward.
+fn miter_normals(chain: &mut [CapPoint], out: Vec2) {
+    let n = chain.len();
+    let span = chain[n - 1].pos - chain[0].pos;
+    // Outward stays on the same side of the direction of travel all the way round
+    let side = if span.perp().dot(out) >= 0.0 { 1.0 } else { -1.0 };
+    let edge_normal = |a: Vec2, b: Vec2| (b - a).normalize_or_zero().perp() * side;
+    for i in 1..n - 1 {
+        let n1 = edge_normal(chain[i - 1].pos, chain[i].pos);
+        let n2 = edge_normal(chain[i].pos, chain[i + 1].pos);
+        let mid = (n1 + n2).normalize_or_zero();
+        chain[i].normal = mid / mid.dot(n1).max(0.35);
+    }
+}
+
+fn grain_uv(along: f32, f: f32) -> Vec2 {
+    vec2(along / GRAIN_W as f32, (GRAIN_PLAIN_ROWS + f * (GRAIN_H as f32 - GRAIN_PLAIN_ROWS)) / GRAIN_H as f32)
+}
+
+fn mix(a: Color, b: Color, t: f32) -> Color {
+    Color::new(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t)
+}
+
+/// The segment of `edge` spanning `x`, if any.
+fn segment_at(edge: &[Vec2], x: f32) -> Option<usize> {
+    edge.windows(2).position(|w| w[0].x != w[1].x && (x - w[0].x) * (x - w[1].x) <= 0.0)
+}
+
+/// The height of `edge` at `x`, if it spans it.
+fn edge_y_at(edge: &[Vec2], x: f32) -> Option<f32> {
+    segment_at(edge, x).map(|i| {
+        let (a, b) = (edge[i], edge[i + 1]);
+        a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x)
+    })
+}
+
+/// Where `edge` first crosses `boundary`, coming up through it from below (`up`) or down through
+/// it from above: the segment of `edge` it crosses on, and the crossing point.
+fn crosses(edge: &[Vec2], boundary: &[Vec2], up: bool) -> Option<(usize, Vec2)> {
+    let depth = |p: Vec2| edge_y_at(boundary, p.x).map(|y| if up { p.y - y } else { y - p.y });
+    let mut before = depth(edge[0]);
+    for k in 1..edge.len() {
+        let now = depth(edge[k]);
+        if let (Some(d0), Some(d1)) = (before, now) {
+            if d0 > 0.0 && d1 <= 0.0 {
+                return Some((k - 1, edge[k - 1].lerp(edge[k], d0 / (d0 - d1))));
+            }
+        }
+        before = now;
+    }
+    None
+}
+
+/// The point `dist` along `edge` from `from` (which lies on segment `seg`), heading toward its
+/// later samples or back toward its earlier ones.
+fn walk(edge: &[Vec2], seg: usize, from: Vec2, dist: f32, forward: bool) -> Vec2 {
+    let mut left = dist;
+    let mut at = from;
+    let mut visit = |next: Vec2| {
+        let step = at.distance(next);
+        if step >= left && step > 0.0 {
+            at = at.lerp(next, left / step);
+            return true;
+        }
+        left -= step;
+        at = next;
+        false
+    };
+    if forward {
+        for &next in &edge[seg + 1..] {
+            if visit(next) {
+                break;
+            }
+        }
+    } else {
+        for &next in edge[..=seg].iter().rev() {
+            if visit(next) {
+                break;
+            }
+        }
+    }
+    at
 }

@@ -12,7 +12,7 @@ use crate::input::Controls;
 use crate::items::{Item, ItemKind};
 use crate::kitty::{Kitty, Push, Support};
 use crate::level::{self, Difficulty, LevelPlan};
-use crate::limb::{Attachment, Limb, LimbId, LimbSpec};
+use crate::limb::{self, Attachment, Limb, LimbId, LimbSpec};
 use crate::rng::Rng;
 use crate::sprites::Assets;
 use crate::story::{self, Friend};
@@ -33,6 +33,8 @@ pub struct World {
     pub friend: Friend,
     trees: Vec<Tree>,
     bark: Texture2D,
+    /// Bark grain running along the limbs.
+    grain: Texture2D,
     pub limbs: Vec<Limb>,
     pub goal: LimbId,
     items: Vec<Item>,
@@ -95,6 +97,7 @@ impl World {
             difficulty,
             trees,
             bark,
+            grain: limb::make_grain_texture(),
             limbs,
             goal,
             items,
@@ -387,16 +390,16 @@ impl World {
 
         let view_rect = camera.view_rect();
         let visible = |r: Rect| r.overlaps(&Rect::new(view_rect.x - 120.0, view_rect.y - 120.0, view_rect.w + 240.0, view_rect.h + 240.0));
-        // Leaves behind the wood, the wood, then trunks over the limbs' roots, then leaves in front
+        // Leaves behind the wood, the wood (each limb merged with its forks), then trunks over
+        // the limbs' roots (with the wood brought back out over their edges), then leaves in front
         for limb in self.limbs.iter().filter(|l| visible(l.bounds())) {
             limb.draw_back(assets, self.time, self.breeze);
         }
-        for limb in self.limbs.iter().filter(|l| visible(l.bounds())) {
-            limb.draw();
-        }
+        limb::draw_wood(&self.limbs, |l| visible(l.bounds()), &self.grain);
         for tree in &self.trees {
             tree.draw(assets, &self.bark, view_rect);
         }
+        limb::draw_roots(&self.limbs, |l| visible(l.bounds()), &self.grain);
         for limb in self.limbs.iter().filter(|l| visible(l.bounds())) {
             limb.draw_front(assets, self.time, self.breeze);
         }

@@ -101,6 +101,12 @@ pub const BARK: Color = Color::new(0.47, 0.29, 0.15, 1.0);
 pub const BARK_DARK: Color = Color::new(0.27, 0.16, 0.08, 1.0);
 pub const BARK_LIGHT: Color = Color::new(0.63, 0.42, 0.24, 1.0);
 pub const BARK_YOUNG: Color = Color::new(0.64, 0.47, 0.27, 1.0);
+/// Limbs are shaded from a sunlit top edge down to these on their undersides.
+pub const BARK_SHADE: Color = Color::new(0.37, 0.22, 0.11, 1.0);
+pub const BARK_YOUNG_LIGHT: Color = Color::new(0.77, 0.66, 0.41, 1.0);
+pub const BARK_YOUNG_SHADE: Color = Color::new(0.50, 0.36, 0.19, 1.0);
+/// Fresh pale wood showing where a limb snapped.
+pub const WOOD_SPLINTER: Color = Color::new(0.90, 0.78, 0.55, 1.0);
 pub const GRASS: Color = Color::new(0.36, 0.55, 0.20, 1.0);
 pub const GRASS_DARK: Color = Color::new(0.25, 0.42, 0.14, 1.0);
 pub const SOIL: Color = Color::new(0.33, 0.23, 0.14, 1.0);
