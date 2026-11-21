@@ -31,6 +31,7 @@ pub const KITTY_SPEED: f32 = 5.0;
 pub const KITTY_GRAVITY: f32 = 0.5;
 pub const KITTY_JUMP_ACCEL: f32 = -1.0;
 pub const KITTY_JUMP_STEPS: u32 = 30; // how long holding jump keeps accelerating upward
+pub const KITTY_MIN_JUMP_STEPS: u32 = 10; // a quick tap on a phone still makes a proper hop
 pub const KITTY_FOOT_REACH: f32 = 27.0;
 pub const KITTY_WEIGHT: f32 = 38000.0;
 pub const LANDING_TOLERANCE: f32 = 12.0;
