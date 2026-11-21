@@ -45,7 +45,7 @@ reach the friend waiting in a nest at the top.
   </tr>
   <tr>
     <td align="center" width="33%"><img src="docs/images/climbing.jpg" width="250" alt="Climbing past a squirrel and a snake"><br><sub>Squirrel and snake</sub></td>
-    <td align="center" width="33%"><img src="docs/images/crow-and-dog.jpg" width="250" alt="A crow overhead and a dog on the prowl"><br><sub>Crow and dog</sub></td>
+    <td align="center" width="33%"><img src="docs/images/crow-and-snakes.jpg" width="250" alt="A crow overhead and snakes coiled on the branches"><br><sub>Crow and snakes</sub></td>
     <td align="center" width="33%"><img src="docs/images/level-clear.jpg" width="250" alt="Level clear tally"><br><sub>Mochi is home!</sub></td>
   </tr>
 </table>
