@@ -42,6 +42,31 @@
       "luna_cheer_0.png",
       "luna_cheer_1.png",
       "luna_cheer_2.png"
+    ],
+    "pip_storm": [
+      "pip_storm_0.png",
+      "pip_storm_1.png",
+      "pip_storm_2.png"
+    ],
+    "hazel_storm": [
+      "hazel_storm_0.png",
+      "hazel_storm_1.png",
+      "hazel_storm_2.png"
+    ],
+    "mochi_storm": [
+      "mochi_storm_0.png",
+      "mochi_storm_1.png",
+      "mochi_storm_2.png"
+    ],
+    "sunny_storm": [
+      "sunny_storm_0.png",
+      "sunny_storm_1.png",
+      "sunny_storm_2.png"
+    ],
+    "luna_storm": [
+      "luna_storm_0.png",
+      "luna_storm_1.png",
+      "luna_storm_2.png"
     ]
   },
   "anchors": {
@@ -132,6 +157,66 @@
     "luna_cheer_2.png": [
       36,
       86
+    ],
+    "pip_storm_0.png": [
+      41,
+      79
+    ],
+    "pip_storm_1.png": [
+      49,
+      72
+    ],
+    "pip_storm_2.png": [
+      37,
+      87
+    ],
+    "hazel_storm_0.png": [
+      40,
+      66
+    ],
+    "hazel_storm_1.png": [
+      39,
+      62
+    ],
+    "hazel_storm_2.png": [
+      33,
+      74
+    ],
+    "mochi_storm_0.png": [
+      36,
+      74
+    ],
+    "mochi_storm_1.png": [
+      41,
+      59
+    ],
+    "mochi_storm_2.png": [
+      34,
+      75
+    ],
+    "sunny_storm_0.png": [
+      35,
+      65
+    ],
+    "sunny_storm_1.png": [
+      40,
+      54
+    ],
+    "sunny_storm_2.png": [
+      31,
+      76
+    ],
+    "luna_storm_0.png": [
+      43,
+      63
+    ],
+    "luna_storm_1.png": [
+      44,
+      67
+    ],
+    "luna_storm_2.png": [
+      38,
+      70
     ]
   },
   "hits": {}

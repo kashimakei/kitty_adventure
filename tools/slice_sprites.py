@@ -179,9 +179,12 @@ CHARACTERS = {
     "friends": {
         "out": "assets/friends",
         "background": (185, 185, 185),
-        "sheets": {"friends": "assets/source/friends_sheet.jpg"},
+        "sheets": {"friends": "assets/source/friends_sheet.jpg",
+                   "storm": "assets/source/friends_storm_sheet.jpg"},
         "reference": ("pip_help", 0),
         "target_height": 76,
+        # The storm sheet (the friends frightened, tumbling on the wind) is drawn at its own scale
+        "match_sheet_areas": True,
         # Pip's fur is nearly the background grey: key gently and leave enclosed grey alone
         "outside_tolerance": 20,
         "enclosed_tolerance": None,
@@ -197,6 +200,11 @@ CHARACTERS = {
             "sunny_cheer": ("friends", (560, 1100, 2400, 1400), "center"),
             "luna_help":   ("friends", (0, 1400, 560, 1792), "center"),
             "luna_cheer":  ("friends", (560, 1400, 2400, 1792), "center"),
+            "pip_storm":   ("storm", (0, 0, 1792, 510), "center"),
+            "hazel_storm": ("storm", (0, 510, 1792, 1000), "center"),
+            "mochi_storm": ("storm", (0, 1000, 1792, 1465), "center"),
+            "sunny_storm": ("storm", (0, 1465, 1792, 1950), "center"),
+            "luna_storm":  ("storm", (0, 1950, 1792, 2400), "center"),
         },
     },
     "items": {

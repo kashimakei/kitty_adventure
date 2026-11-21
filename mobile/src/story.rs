@@ -86,6 +86,18 @@ impl Friend {
         format!("{}_cheer_{}", self.sprite(), cycle[i % cycle.len()])
     }
 
+    /// Frame `i` of it tumbling frightened on the wind, wrapping around. Mochi's first pose is
+    /// nearly upright, as if sitting, and Sunny's middle one squeezes her eyes shut like her
+    /// laughing cheer, so those are left out.
+    pub fn storm_frame(self, i: usize) -> String {
+        let cycle: &[usize] = match self {
+            Friend::Mochi => &[1, 2],
+            Friend::Sunny => &[0, 2],
+            _ => &[0, 1, 2],
+        };
+        format!("{}_storm_{}", self.sprite(), cycle[i % cycle.len()])
+    }
+
     pub fn help_frame(self) -> String {
         format!("{}_help_0", self.sprite())
     }
@@ -419,12 +431,12 @@ fn page_art(assets: &Assets, art: &PageArt, r: Rect, t: f32, time: f32, alpha: f
                 let speed = 70.0 + i as f32 * 9.0;
                 let x = r.x + ((t * speed + i as f32 * 120.0) % (r.w + 160.0)) - 80.0;
                 let y = r.y + 150.0 + i as f32 * 52.0 + (t * 2.2 + i as f32).sin() * 26.0;
-                let spin = (t * 1.6 + i as f32 * 2.0).sin() * 0.6;
-                // Frightened, they flail as they tumble (their worried calling-for-help pose)
+                // Frightened, they tumble head over heels through their storm poses (which turn
+                // over on their own, so they need less extra spin); later they ride it giggling
                 let (frame, spin) = if *scared {
-                    (friend.help_frame(), spin * 1.4 + (t * 9.0 + i as f32).sin() * 0.08)
+                    (friend.storm_frame((t * 3.0 + i as f32 * 0.7) as usize), (t * 1.6 + i as f32 * 2.0).sin() * 0.3)
                 } else {
-                    (friend.cheer_frame(1), spin)
+                    (friend.cheer_frame(1), (t * 1.6 + i as f32 * 2.0).sin() * 0.6)
                 };
                 assets.friends.draw_ex(&frame, vec2(x, y), 1.0, 0.75, spin, white);
             }
