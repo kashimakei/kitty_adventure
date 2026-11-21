@@ -80,7 +80,7 @@ mod store {
 /// for secondary users and work profiles), so ask the activity for it once through JNI.
 #[cfg(target_os = "android")]
 mod android {
-    use std::ffi::{CStr, CString};
+    use std::ffi::CStr;
     use std::path::PathBuf;
     use std::ptr::null_mut;
     use std::sync::OnceLock;
@@ -147,9 +147,6 @@ mod android {
         }
         pending
     }
-
-    #[allow(dead_code)]
-    fn _assert_cstring_unused(_: CString) {}
 }
 
 /// Web: localStorage, through the `kitty_storage` plugin registered in web/index.html. Without
@@ -176,5 +173,25 @@ mod store {
     #[no_mangle]
     pub extern "C" fn kitty_storage_crate_version() -> u32 {
         PLUGIN_VERSION
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn high_score_round_trips_and_never_goes_down() {
+        let dir = std::env::temp_dir().join(format!("kitty-save-test-{}", std::process::id()));
+        std::env::set_var("XDG_DATA_HOME", &dir);
+        save_high_score(1234);
+        assert_eq!(store::load(), Some(1234));
+        assert_eq!(std::fs::read_to_string(dir.join("kitty-adventure/high_score")).unwrap(), "1234\n");
+        save_high_score(99);
+        assert_eq!(store::load(), Some(1234));
+        assert_eq!(load_high_score(), 1234);
+        std::fs::remove_dir_all(&dir).unwrap();
+        // Storage vanishing mid-game keeps the session's best
+        assert_eq!(load_high_score(), 1234);
     }
 }
