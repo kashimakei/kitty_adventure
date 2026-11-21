@@ -9,6 +9,8 @@ use std::task::Poll;
 use macroquad::prelude::*;
 use serde::Deserialize;
 
+use crate::parallax::Scenery;
+
 #[derive(Deserialize)]
 struct Manifest {
     animations: HashMap<String, Vec<String>>,
@@ -242,7 +244,10 @@ pub struct Assets {
     pub friends: Sprites,
     pub items: Sprites,
     pub foliage: Sprites,
+    /// The painted forest used behind the menu screens.
     pub background: Texture2D,
+    /// The sky and parallax layers behind the trees in play.
+    pub scenery: Scenery,
 }
 
 impl Assets {
@@ -258,16 +263,20 @@ impl Assets {
         let snake = progress.load("snake", "Coiling the snakes...").await;
         let crow = progress.load("crow", "Gathering the crows...").await;
         let eagle = progress.load("eagle", "Calling the eagles...").await;
-        let background = while_loading(load_texture("background.png"), 1.0, "Ready!").await.expect("background.png");
+        let fraction = progress.done as f32 / LOAD_STAGES as f32;
+        draw_loading(fraction, "Painting the sky...");
+        next_frame().await;
+        let background = while_loading(load_texture("background.png"), fraction, "Painting the sky...").await.expect("background.png");
         background.set_filter(FilterMode::Linear);
+        let scenery = while_loading(Scenery::load(), fraction, "Painting the sky...").await;
         draw_loading(1.0, "Ready!");
         next_frame().await;
-        Self { kitty, dog, eagle, squirrel, snake, crow, friends, items, foliage, background }
+        Self { kitty, dog, eagle, squirrel, snake, crow, friends, items, foliage, background, scenery }
     }
 }
 
-/// How many characters Assets::load works through.
-const LOAD_STAGES: usize = 9;
+/// How many stages Assets::load works through: nine characters, then the scenery.
+const LOAD_STAGES: usize = 10;
 
 struct Progress {
     done: usize,

@@ -22,6 +22,8 @@ stage_assets() {
         cp ../assets/"$character"/*.png ../assets/"$character"/anchors.json "assets/$character/"
     done
     cp ../assets/Background_lvl1.png assets/background.png
+    mkdir -p assets/parallax
+    cp ../assets/parallax/*.png assets/parallax/
     cp ../assets/meow.wav ../assets/meow2.wav ../assets/hiss.wav ../assets/crunch.wav ../assets/BGM.ogg assets/sounds/
 }
 

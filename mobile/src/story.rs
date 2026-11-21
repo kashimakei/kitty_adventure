@@ -667,7 +667,7 @@ fn basics_card(assets: &Assets, top: f32, alpha: f32) {
                 fit_sprite_centred(&assets.kitty, "land_1", at + vec2(0.0, -10.0), 44.0, 1.0, white);
             }
             TipIcon::Treats => {
-                assets.items.draw_ex("fish_0", at + vec2(-12.0, -10.0), 1.0, 0.65, -0.3, white);
+                assets.items.draw_ex("fish_1", at + vec2(-12.0, -10.0), 1.0, 0.65, -0.3, white);
                 assets.items.draw_ex("gold_0", at + vec2(12.0, 2.0), 1.0, 0.65, 0.2, white);
                 assets.items.draw_ex("heart_0", at + vec2(-10.0, 16.0), 1.0, 0.6, 0.0, white);
             }

@@ -23,7 +23,6 @@ pub const CAMERA_TOP_MARGIN: f32 = 0.33;
 pub const CAMERA_BOTTOM_MARGIN: f32 = 0.66;
 pub const CAMERA_GROUND_SHOWN: f32 = 170.0; // px of ground visible at the bottom when on it
 pub const CAMERA_FOLLOW: f32 = 0.12;        // fraction of the gap closed per step
-pub const BACKGROUND_PARALLAX: f32 = 0.3;
 
 // Kitty (per 60 Hz step, as in kitty.py)
 pub const KITTY_BOX: (f32, f32) = (100.0, 100.0);
@@ -94,8 +93,6 @@ pub const FORK_RISE: (f32, f32) = (-0.75, -0.45);
 pub const FORK_LOAD_SHARE: f32 = 0.8;
 
 // Colours
-pub const SKY: Color = Color::new(0.57, 0.86, 1.0, 1.0);
-pub const SKY_HIGH: Color = Color::new(0.32, 0.55, 0.86, 1.0);
 pub const TRUNK_COLOR: Color = Color::new(0.36, 0.23, 0.13, 1.0);
 pub const BARK: Color = Color::new(0.47, 0.29, 0.15, 1.0);
 pub const BARK_DARK: Color = Color::new(0.27, 0.16, 0.08, 1.0);
