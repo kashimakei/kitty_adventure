@@ -31,10 +31,13 @@ const SNARL_TIME: f32 = 0.5; // seconds of snarling before the charge: the playe
 const BARK_RANGE: f32 = 160.0; // px sideways; Kitty above and within this gets barked at
 const BARK_HEIGHT: f32 = 500.0; // px; higher than this the dog loses interest
 const BARK_BEFORE_JUMP: f32 = 0.8; // seconds of barking before leaping up at Kitty's branch
-/// Barking plays a woof at most this often, so a pack under Kitty isn't a wall of noise.
+/// Barking woofs at most this often, so a dog under Kitty isn't a wall of noise.
 const BARK_SOUND_GAP: f32 = 1.2;
+/// Kitty must be this far to one side before the dog turns to her, so it doesn't flip back and
+/// forth while she's straight overhead.
+const TURN_DEADZONE: f32 = 8.0;
 const SCRATCH_EVERY: (f32, f32) = (5.0, 10.0);
-const EXPLORE_CHANCE: f32 = 3.0; // TEMP TEST // per second, while under a low branch, of hopping up to look
+const EXPLORE_CHANCE: f32 = 0.15; // per second, while under a low branch, of hopping up to look
 const BRANCH_STAY: (f32, f32) = (4.0, 8.0); // seconds a wandering dog stays up before hopping down
 const GROUND_INSET: f32 = 10.0; // keeps the dog this far inside the world's edges
 const AIR_POSE_SPEED: f32 = 150.0; // px/s up or down past which it shows the rising/dropping pose
@@ -53,6 +56,7 @@ static RUN: Clip = Clip {
     fps: 16.0,
     looped: true,
 };
+/// Jaws shut on the first frame and wide open on the rest; the woof goes with the second.
 static BARK: Clip = Clip { frames: &["bark_0", "bark_1", "bark_2", "bark_1"], fps: 6.0, looped: true };
 static PREP: Clip = Clip { frames: &["prep_1", "prep_2", "prep_3"], fps: 10.0, looped: false };
 static RISE: Clip = Clip { frames: &["air_0", "air_1"], fps: 8.0, looped: false };
@@ -90,8 +94,10 @@ pub struct Dog {
     next_scratch: f32,
     branch_time: f32,
     branch_stay: f32,
+    /// Where the leap being crouched for, or flown, is meant to come down.
     jump_target: Option<Support>,
     jump_x: f32,
+    /// Falling because the branch snapped: it lands in a heap.
     crashed: bool,
     bark_cooldown: f32,
     animator: Animator,
@@ -140,18 +146,28 @@ impl Dog {
 
     fn set_state(&mut self, state: State) {
         if state != self.state {
-            info!("DBG dog x={:.0} y={:.0} {:?} -> {:?} support={:?}", self.x, self.y, self.state, state, self.support);
             self.state = state;
             self.state_time = 0.0;
+        }
+    }
+
+    /// Turn toward something `dx` px away, unless it's nearly straight ahead or overhead.
+    fn face(&mut self, dx: f32) {
+        if dx.abs() > TURN_DEADZONE {
+            self.facing = dx.signum();
         }
     }
 
     // ------------------ On the ground or a branch -------------------
 
     fn think(&mut self, ctx: &mut EnemyCtx, support: Support) {
-        let snapped = matches!(support, Support::Limb(id) if ctx.limbs[id].broken());
+        // Keep to the walkable span: a branch bending under the dog draws its tip in underfoot
+        let (lo, hi) = walk_range(support, ctx.limbs);
+        self.x = self.x.clamp(lo, hi);
         let Some(top) = surface(support, ctx.limbs, self.x) else {
-            // The branch snapped, or the dog stepped off its end
+            // The branch snapped, or bent away from under the dog's feet
+            let snapped = matches!(support, Support::Limb(id) if ctx.limbs[id].broken());
+            self.jump_target = None;
             self.take_off(0.0, 0.0, snapped);
             return;
         };
@@ -159,9 +175,6 @@ impl Dog {
         self.y = top;
         if let Support::Limb(id) = support {
             ctx.pushes.push(Push::Load { limb: id, x: self.x, weight: WEIGHT });
-            if ((self.state_time / STEP) as u32) % 20 == 0 {
-                info!("DBG dog on limb {} x={:.0} y={:.1} tip_y={:.1} strain={:.2}", id, self.x, self.y, ctx.limbs[id].tip().y, ctx.limbs[id].strain());
-            }
         }
 
         match self.state {
@@ -178,14 +191,12 @@ impl Dog {
 
         let kitty = ctx.kitty;
         let dx = kitty.x - self.x;
-        let toward = if dx > 0.0 { 1.0 } else { -1.0 };
         let same_level = (kitty.y - self.y).abs() < SAME_LEVEL;
         let above = self.y - BARK_HEIGHT < kitty.y && kitty.y < self.y - SAME_LEVEL && dx.abs() < BARK_RANGE;
         let below = kitty.y > self.y + SAME_LEVEL && dx.abs() < SIGHT;
-        let (lo, hi) = walk_range(support, ctx.limbs);
 
         if same_level && dx.abs() < SIGHT {
-            self.facing = toward;
+            self.face(dx);
             if !matches!(self.state, State::Snarl | State::Run) {
                 self.set_state(State::Snarl);
             } else if self.state == State::Snarl && self.state_time >= SNARL_TIME {
@@ -197,12 +208,9 @@ impl Dog {
             return;
         }
         if above {
-            self.facing = toward;
+            self.face(dx);
             self.set_state(State::Bark);
-            if self.bark_cooldown <= 0.0 {
-                ctx.sfx.push(Sfx::Bark);
-                self.bark_cooldown = BARK_SOUND_GAP;
-            }
+            self.woof(ctx.sfx);
             let kitty_limb = match kitty.standing_on {
                 Some(Support::Limb(id)) => Some(id),
                 Some(Support::Ground) => None,
@@ -217,8 +225,7 @@ impl Dog {
             return;
         }
         if below && support != Support::Ground {
-            self.facing = toward;
-            self.prepare_jump(Support::Ground, self.x + toward * HOP_DOWN);
+            self.prepare_jump(Support::Ground, self.x + dx.signum() * HOP_DOWN);
             return;
         }
 
@@ -268,6 +275,19 @@ impl Dog {
         false
     }
 
+    /// Woof as the jaws open in the bark loop, at most every `BARK_SOUND_GAP`. Dogs barking in
+    /// step share one woof.
+    fn woof(&mut self, sfx: &mut Vec<Sfx>) {
+        let opens = 1.0 / BARK.fps;
+        let phase = self.state_time % BARK.duration();
+        if self.bark_cooldown <= 0.0 && (opens..opens + STEP).contains(&phase) {
+            if !sfx.contains(&Sfx::Bark) {
+                sfx.push(Sfx::Bark);
+            }
+            self.bark_cooldown = BARK_SOUND_GAP;
+        }
+    }
+
     /// Is limb `id` an intact branch above the dog and low enough to leap onto?
     fn reachable(&self, limbs: &[Limb], id: LimbId) -> bool {
         let limb = &limbs[id];
@@ -294,6 +314,7 @@ impl Dog {
     /// Leap on an arc that clears the target's surface and comes down on it at `jump_x`.
     fn launch(&mut self, limbs: &[Limb]) {
         let Some(target_y) = self.jump_target.and_then(|t| surface(t, limbs, self.jump_x)) else {
+            // The branch snapped, or bent out of reach, while the dog crouched
             self.jump_target = None;
             self.set_state(State::Walk);
             return;
@@ -311,13 +332,11 @@ impl Dog {
         self.vx = vx;
         self.vy = vy;
         self.crashed = crashed;
-        if crashed {
-            self.jump_target = None;
-        }
         self.set_state(State::Air);
     }
 
-    /// Fly the arc; only the leap's target or the ground can catch the dog, and only coming down.
+    /// Fly the arc; only the leap's target or the ground can catch the dog, only coming down, and
+    /// only where it can walk (a leap that falls short of a branch passes its base, in the trunk).
     fn fly(&mut self, ctx: &mut EnemyCtx) {
         let (lo, hi) = walk_range(Support::Ground, ctx.limbs);
         let previous_y = self.y;
@@ -328,6 +347,10 @@ impl Dog {
             return;
         }
         for candidate in self.jump_target.into_iter().chain([Support::Ground]) {
+            let (lo, hi) = walk_range(candidate, ctx.limbs);
+            if !(lo..=hi).contains(&self.x) {
+                continue;
+            }
             let Some(top) = surface(candidate, ctx.limbs, self.x) else { continue };
             if previous_y <= top + LAND_CATCH && self.y >= top {
                 self.support = Some(candidate);
@@ -337,7 +360,6 @@ impl Dog {
                 self.branch_time = 0.0;
                 self.branch_stay = ctx.rng.pair(BRANCH_STAY);
                 if let Support::Limb(id) = candidate {
-                    info!("DBG dog landed limb {} x={:.0} y={:.1} tip_y={:.1}", id, self.x, top, ctx.limbs[id].tip().y);
                     ctx.pushes.push(Push::Kick { limb: id, x: self.x, speed: LAND_KICK });
                 }
                 self.set_state(if self.crashed { State::Crash } else { State::Land });
@@ -379,7 +401,6 @@ impl Enemy for Dog {
 
     fn draw(&self, assets: &Assets) {
         assets.dog.draw(self.animator.frame(), vec2(self.x, self.y), self.facing, WHITE);
-        draw_text(&format!("{:?} {}", self.state, self.animator.frame()), self.x - 50.0, self.y - 110.0, 22.0, RED);
     }
 
     fn strikes(&self, assets: &Assets, body: Rect) -> bool {

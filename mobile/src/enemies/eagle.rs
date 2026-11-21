@@ -31,11 +31,13 @@ const PULL_UP: f32 = 160.0; // px/s climbing out of the swoop
 const LEVEL_OFF: f32 = 150.0; // px/s^2 the climb eases by
 const CLIMB_OUT: f32 = 40.0; // px/s it keeps rising as it leaves
 const RECOVER_TIME: f32 = 0.6;
-/// Lowest the hitbox centre goes, so a swoop at Kitty on the ground skims the grass.
-const FLOOR: f32 = GROUND_Y - 40.0;
+/// Lowest the hitbox centre goes: a swoop at Kitty on the ground skims the grass with its talons
+/// instead of plunging into it.
+const FLOOR: f32 = GROUND_Y - 50.0;
 const TALON_REACH: f32 = 170.0; // px from Kitty at which the talons come forward
 const PLUNGE_STEEPNESS: f32 = 1.3; // falling this many times faster than flying forward looks like a dive
-/// Gone once this far past the view's side it's heading to, or below it.
+/// Gone once this far past the view's side it's heading to, or below it; or, its swoop spent,
+/// once this far out of sight any way at all.
 const EXIT_MARGIN: f32 = 80.0;
 const EXIT_BELOW: f32 = 150.0;
 
@@ -62,6 +64,7 @@ pub struct Eagle {
     speed_scale: f32,
     state: State,
     state_time: f32,
+    /// It swoops once per pass.
     swooped: bool,
     /// How far Kitty was at the last step, for picking the talon pose.
     kitty_distance: f32,
@@ -93,7 +96,6 @@ impl Eagle {
     }
 
     fn set_state(&mut self, state: State) {
-        info!("DBG eagle pos={:.0},{:.0} vel={:.0},{:.0} {:?} -> {:?}", self.pos.x, self.pos.y, self.vel.x, self.vel.y, self.state, state);
         self.state = state;
         self.state_time = 0.0;
     }
@@ -105,6 +107,16 @@ impl Eagle {
 
     fn hitbox(&self) -> Rect {
         Rect::new(self.pos.x - HITBOX.x / 2.0, self.pos.y - HITBOX.y / 2.0, HITBOX.x, HITBOX.y)
+    }
+
+    /// Flown out of the view for good?
+    fn gone(&self, view: Rect) -> bool {
+        let hitbox = self.hitbox();
+        let m = EXIT_MARGIN;
+        let past_side = if self.facing > 0.0 { hitbox.left() > view.right() + m } else { hitbox.right() < view.left() - m };
+        let around = Rect::new(view.x - m, view.y - m, view.w + 2.0 * m, view.h + 2.0 * m);
+        let spent = self.swooped && self.state == State::Cruise && !around.overlaps(&hitbox);
+        past_side || hitbox.top() > view.bottom() + EXIT_BELOW || spent
     }
 }
 
@@ -128,14 +140,14 @@ impl Enemy for Eagle {
                 // Wings set, gliding level: the tell that a dive is coming
                 if self.state_time >= WINDUP {
                     self.set_state(State::Swoop);
-                    self.vel = Vec2::from_angle(to_kitty.y.atan2(to_kitty.x)) * SWOOP_SPEED * self.speed_scale;
+                    self.vel = to_kitty.normalize_or(vec2(self.facing, 0.0)) * SWOOP_SPEED * self.speed_scale;
                 }
             }
             State::Swoop => {
                 // Bend gently toward Kitty; quick feet can still slip out from under the talons
                 let speed = self.vel.length();
-                let heading = self.vel.y.atan2(self.vel.x);
-                let turn = (to_kitty.y.atan2(to_kitty.x) - heading + PI).rem_euclid(TAU) - PI;
+                let heading = self.vel.to_angle();
+                let turn = (to_kitty.to_angle() - heading + PI).rem_euclid(TAU) - PI;
                 let heading = heading + turn.clamp(-HOMING * STEP, HOMING * STEP);
                 self.vel = Vec2::from_angle(heading) * speed;
                 if self.vel.x * self.facing < MIN_FORWARD {
@@ -162,15 +174,8 @@ impl Enemy for Eagle {
             self.vel.y = self.vel.y.min(0.0);
         }
         self.kitty_distance = self.pos.distance(target);
-
-        let hitbox = self.hitbox();
-        let view = ctx.view;
-        if (self.facing > 0.0 && hitbox.left() > view.right() + EXIT_MARGIN)
-            || (self.facing < 0.0 && hitbox.right() < view.left() - EXIT_MARGIN)
-            || hitbox.top() > view.bottom() + EXIT_BELOW
-        {
+        if self.gone(ctx.view) {
             self.alive = false;
-            info!("DBG eagle gone pos={:.0},{:.0}", self.pos.x, self.pos.y);
         }
     }
 
@@ -179,6 +184,7 @@ impl Enemy for Eagle {
         let clip = match self.state {
             State::Windup => &GLIDE,
             State::Swoop if self.vel.y > PLUNGE_STEEPNESS * self.vel.x.abs() => &PLUNGE,
+            // Once the talons swing forward they stay out for the rest of the swoop
             State::Swoop if self.kitty_distance < TALON_REACH || anim.is(&TALONS) => &TALONS,
             State::Swoop => &GLIDE,
             State::Recover => &RECOVER,
@@ -191,8 +197,6 @@ impl Enemy for Eagle {
 
     fn draw(&self, assets: &Assets) {
         assets.eagle.draw(self.animator.frame(), self.head(), self.facing, WHITE);
-        draw_text(&format!("{:?} {}", self.state, self.animator.frame()), self.pos.x - 50.0, self.pos.y - 70.0, 22.0, RED);
-        let h = self.hitbox(); draw_rectangle_lines(h.x, h.y, h.w, h.h, 2.0, YELLOW);
     }
 
     fn strikes(&self, assets: &Assets, body: Rect) -> bool {
