@@ -7,6 +7,9 @@ plugins {
 /** The Rust crate (mobile/): its cdylib, libkitty_mobile.so, is the whole game. */
 val rustCrateDir: File = rootDir.parentFile
 
+/** The game library's name, as MainActivity loads it with System.loadLibrary. */
+val rustLibrary = "kitty_mobile"
+
 /** Android ABIs to build the game for (gradle.properties; -PrustAbis=arm64-v8a for a quick build). */
 val rustAbis: List<String> = providers.gradleProperty("rustAbis").get()
     .split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -14,13 +17,27 @@ val rustAbis: List<String> = providers.gradleProperty("rustAbis").get()
 /** Android 8.0; cargo-ndk links the game against the same API level. */
 val minApi = 26
 
+/**
+ * The NDK cargo-ndk builds with: r25 is the oldest current Rust supports. AGP also uses it to
+ * strip the libraries, and pinning it stops AGP looking for (and downloading) its own default.
+ */
+val ndkVersionUsed = "25.2.9519653"
+
+/**
+ * The debug signing key. It's the game's own, beside AGP's ~/.android/debug.keystore rather than
+ * that file, which other tools can replace without AGP's AndroidDebugKey alias (cargo-quad-apk
+ * did). One per user, not per checkout, so debug APKs from any clone or worktree install over each
+ * other. Made on the first build.
+ */
+val debugKeystore: File = File(System.getProperty("user.home"), ".android/kitty-adventure-debug.keystore")
+val debugKeyAlias = "AndroidDebugKey"
+val debugKeyPassword = "android"
+
 android {
     namespace = "com.kashimakei.kittyadventure"
     compileSdk = 35
     buildToolsVersion = "35.0.0"
-    // The NDK cargo-ndk builds with (r25 is the oldest current Rust supports). AGP also uses it to
-    // strip the libraries; pinning it stops AGP looking for its own default NDK.
-    ndkVersion = "25.2.9519653"
+    ndkVersion = ndkVersionUsed
 
     defaultConfig {
         applicationId = "com.kashimakei.kittyadventure"
@@ -28,6 +45,15 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.2.0"
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            storeFile = debugKeystore
+            storePassword = debugKeyPassword
+            keyAlias = debugKeyAlias
+            keyPassword = debugKeyPassword
+        }
     }
 
     compileOptions {
@@ -40,7 +66,8 @@ android {
     sourceSets["main"].assets.srcDir(rustCrateDir.resolve("assets"))
 
     androidResources {
-        // The sounds are compressed already, so store them as they are.
+        // Keep the sounds uncompressed (aapt2's default for these types anyway), so the
+        // AssetManager reads them straight out of the APK without inflating them.
         noCompress += listOf("ogg", "wav")
     }
 }
@@ -60,6 +87,9 @@ abstract class CargoNdkBuild : DefaultTask() {
 
     @get:Input
     abstract val apiLevel: Property<Int>
+
+    @get:Input
+    abstract val library: Property<String>
 
     @get:Internal
     abstract val crateDir: DirectoryProperty
@@ -98,7 +128,57 @@ abstract class CargoNdkBuild : DefaultTask() {
             args(abis.get().flatMap { listOf("--target", it) })
             args("build", "--release", "--lib")
         }
+        // cargo-ndk copies every cdylib the build makes, including dependencies that are cdylibs
+        // too (lewton, ../Engines' Python module). Only the game, and libc++ if it ever needs it,
+        // belongs in the APK.
+        val game = "lib${library.get()}.so"
+        val keep = setOf(game, "libc++_shared.so")
+        out.walkTopDown().filter { it.isFile && it.name !in keep }.forEach { it.delete() }
+        for (abi in abis.get()) {
+            check(out.resolve("$abi/$game").isFile) { "cargo-ndk didn't build $game for $abi" }
+        }
     }
+}
+
+/** Makes the debug keystore with the JDK's keytool, the way AGP makes ~/.android/debug.keystore. */
+abstract class DebugKeystore : DefaultTask() {
+    @get:Internal
+    abstract val keystore: RegularFileProperty
+
+    @get:Input
+    abstract val alias: Property<String>
+
+    @get:Input
+    abstract val password: Property<String>
+
+    @get:Inject
+    abstract val execOps: ExecOperations
+
+    init {
+        onlyIf { !keystore.get().asFile.exists() }
+    }
+
+    @TaskAction
+    fun create() {
+        keystore.get().asFile.parentFile.mkdirs()
+        val keytool = File(System.getProperty("java.home"), "bin/keytool")
+        execOps.exec {
+            commandLine(
+                keytool, "-genkeypair", "-noprompt",
+                "-keystore", keystore.get().asFile, "-storetype", "PKCS12",
+                "-storepass", password.get(), "-keypass", password.get(), "-alias", alias.get(),
+                "-keyalg", "RSA", "-keysize", "2048", "-validity", "10950",
+                "-dname", "CN=Android Debug,O=Android,C=US",
+            )
+        }
+    }
+}
+
+val debugKeystoreTask = tasks.register<DebugKeystore>("debugKeystore") {
+    description = "Makes the debug signing keystore if it doesn't exist."
+    keystore.set(debugKeystore)
+    alias = debugKeyAlias
+    password = debugKeyPassword
 }
 
 /** Fails early, with the fix, when the game's art and sounds haven't been staged. */
@@ -112,7 +192,7 @@ val checkGameAssets by tasks.registering {
 }
 
 tasks.named("preBuild") {
-    dependsOn(checkGameAssets)
+    dependsOn(checkGameAssets, debugKeystoreTask)
 }
 
 androidComponents {
@@ -122,8 +202,10 @@ androidComponents {
             description = "Builds the game's native library for $rustAbis with cargo-ndk."
             abis = rustAbis
             apiLevel = minApi
+            library = rustLibrary
             crateDir.set(rustCrateDir)
-            ndkDir = androidComponents.sdkComponents.ndkDirectory
+            // AGP leaves sdkComponents.ndkDirectory unset here, so find the pinned NDK in the SDK.
+            ndkDir = androidComponents.sdkComponents.sdkDirectory.map { it.dir("ndk/$ndkVersionUsed") }
         }
         // Registers the libraries as generated jniLibs, so merge<Variant>JniLibFolders runs the
         // cargo build first.
