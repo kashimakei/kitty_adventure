@@ -1,0 +1,11 @@
+# Gradle and Android Studio state
+.gradle/
+.kotlin/
+.idea/
+*.iml
+local.properties
+captures/
+# Build output, including the cargo-ndk jniLibs (app/build/generated/jniLibs/)
+build/
+# In case native libraries are ever built into the conventional source folder instead
+app/src/main/jniLibs/
