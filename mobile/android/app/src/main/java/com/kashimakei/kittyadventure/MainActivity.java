@@ -1,8 +1,8 @@
 // miniquad's Android activity (miniquad 0.4.11, java/MainActivity.java), filled in the way
 // cargo-quad-apk fills that template: this app's package, the game's library name, and the
 // plugin hooks (the "//%" lines upstream) either removed or holding Kitty Adventure's immersive
-// mode and cutout handling (marked "Kitty Adventure:"). When updating miniquad, diff its java/
-// directory against this file and QuadNative.java.
+// mode, cutout handling, Back-gesture exclusion and display density (marked "Kitty Adventure:").
+// When updating miniquad, diff its java/ directory against this file and QuadNative.java.
 
 package com.kashimakei.kittyadventure;
 
@@ -33,9 +33,13 @@ import android.content.ClipboardManager;
 
 import android.graphics.Color;
 import android.graphics.Insets;
+import android.graphics.Rect;
+import android.util.DisplayMetrics;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.widget.LinearLayout;
+
+import java.util.Arrays;
 
 import quad_native.QuadNative;
 
@@ -215,6 +219,24 @@ class QuadSurface
     public Surface getNativeSurface() {
         return getHolder().getSurface();
     }
+
+    // Kitty Adventure: thumbs rest near the bottom corners, where a swipe in from the side would
+    // be Android's Back gesture. Keep the bottom 200 dp of each side edge (the most Android
+    // honours per edge) for the game. API 29+.
+    @Override
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom);
+        if (Build.VERSION.SDK_INT >= 29) {
+            float density = getResources().getDisplayMetrics().density;
+            int width = right - left;
+            int height = bottom - top;
+            int band = Math.min(height, Math.round(200 * density));
+            int edge = Math.min(width / 2, Math.round(48 * density));
+            setSystemGestureExclusionRects(Arrays.asList(
+                new Rect(0, height - band, edge, height),
+                new Rect(width - edge, height - band, width, height)));
+        }
+    }
 }
 
 class ResizingLayout
@@ -307,6 +329,18 @@ public class MainActivity extends Activity {
         if (hasFocus) {
             hideSystemBars();
         }
+    }
+
+    // Kitty Adventure: the screen's physical pixels per millimetre, so the game can size its touch
+    // gestures for thumbs (read once over JNI, see src/platform.rs). xdpi is the true density on
+    // most phones; a few report nonsense, so fall back to the density bucket.
+    public float pixelsPerMm() {
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        float dpi = metrics.xdpi;
+        if (dpi < 100.0f || dpi > 1000.0f) {
+            dpi = metrics.densityDpi;
+        }
+        return dpi / 25.4f;
     }
 
     private QuadSurface view;

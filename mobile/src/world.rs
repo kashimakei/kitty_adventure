@@ -18,6 +18,9 @@ use crate::sprites::Assets;
 use crate::story::{self, Friend};
 use crate::tree::{self, Tree};
 
+/// How far the slider must go before Kitty, who only walks at one speed so far, sets off.
+const WALK_THRESHOLD: f32 = 0.1;
+
 /// What happened during a step that the game flow cares about.
 #[derive(PartialEq)]
 pub enum Outcome {
@@ -192,20 +195,22 @@ impl World {
         }
         self.elapsed += STEP;
 
-        // Kitty
-        if controls.jump {
+        // Kitty: for now a press jumps at once and holding climbs higher, as before the
+        // charge jump; the slider walks at full speed past a small threshold
+        if controls.press {
             self.kitty.do_jump(&self.limbs);
             if self.kitty.jumped {
                 self.sfx.push(Sfx::Jump);
             }
         }
-        if !controls.jump_held {
+        if !controls.charge_held {
             self.kitty.stop_jump();
         }
-        if controls.down {
+        if controls.drop {
             self.kitty.let_go(false);
         }
-        self.kitty.step(controls.left, controls.right, self.breeze);
+        let (left, right) = (controls.move_x < -WALK_THRESHOLD, controls.move_x > WALK_THRESHOLD);
+        self.kitty.step(left, right, self.breeze);
         self.kitty.resolve(&self.limbs);
         let pushes = std::mem::take(&mut self.kitty.pushes);
         self.apply(pushes);

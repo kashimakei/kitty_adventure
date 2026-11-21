@@ -28,15 +28,13 @@ pub mod story;
 pub mod tree;
 pub mod world;
 
-use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
-use macroquad::miniquad::EventHandler;
 use macroquad::prelude::*;
 
 use crate::audio::Audio;
 use crate::camera::View;
 use crate::consts::*;
 use crate::hud::HudState;
-use crate::input::Controls;
+use crate::input::{Input, Pending};
 use crate::level::STORY_LEVELS;
 use crate::sprites::Assets;
 use crate::story::Tally;
@@ -77,6 +75,8 @@ struct Game {
     previous_best: u32,
     friends_rescued: usize,
     seed: u64,
+    /// Bumped on every screen change, so input held across one can be ignored.
+    screen_gen: u32,
 }
 
 impl Game {
@@ -93,12 +93,14 @@ impl Game {
             previous_best: 0,
             friends_rescued: 0,
             seed: (macroquad::miniquad::date::now() * 1000.0) as u64,
+            screen_gen: 0,
         }
     }
 
     fn go(&mut self, screen: Screen) {
         self.screen = screen;
         self.screen_time = 0.0;
+        self.screen_gen = self.screen_gen.wrapping_add(1);
     }
 
     fn start_level(&mut self) {
@@ -158,54 +160,35 @@ impl Game {
     }
 }
 
-/// Notices the app being put away (Home, a call, a system dialog, the browser tab hidden), so
-/// play can pause instead of carrying on without the player.
-struct Lifecycle {
-    subscriber: usize,
-    minimized: bool,
-}
-
-impl EventHandler for Lifecycle {
-    fn update(&mut self) {}
-    fn draw(&mut self) {}
-    fn window_minimized_event(&mut self) {
-        self.minimized = true;
-    }
-}
-
-impl Lifecycle {
-    /// Whether the app was away since the last frame. A gap of a second or more between frames
-    /// counts too, for platforms that just stop drawing while hidden (a browser tab); ordinary
-    /// hitches are much shorter, so they don't pause the game.
-    fn was_away(&mut self) -> bool {
-        let subscriber = self.subscriber;
-        repeat_all_miniquad_input(self, subscriber);
-        std::mem::take(&mut self.minimized) || get_frame_time() >= 1.0
-    }
-}
-
 pub async fn run() {
     // Desktop runs from mobile/ with the staged files in assets/; the web and Android builds
     // serve them from their root
     #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     macroquad::file::set_pc_assets_folder("assets");
-    // The buttons read touches directly; touches mirrored as a mouse could leave a button held
-    // after a cancelled touch
+    // Input reads touches as touches; mirrored as a mouse too, every tap would count twice
     simulate_mouse_with_touch(false);
-    let mut lifecycle = Lifecycle { subscriber: register_input_subscriber(), minimized: false };
+    let mut input = Input::new();
     // Sounds load in the background alongside the sprites
     let audio = Audio::load();
     audio.start_music();
     let assets = Assets::load().await;
     let mut game = Game::new();
     let mut accumulator = 0.0;
-    let mut jump_queued = false;
-    let mut down_queued = false;
+    let mut pending = Pending::default();
+    let mut screen_gen = game.screen_gen;
 
     loop {
         let view = View::fit();
-        let controls = input::read(&view);
-        let was_away = lifecycle.was_away();
+        // On a new screen, whatever was held for the last one (the tap that dismissed a menu)
+        // does nothing until it's let go
+        if game.screen_gen != screen_gen {
+            screen_gen = game.screen_gen;
+            input.ignore_current();
+            pending = Pending::default();
+        }
+        // Also notices the app being put away (Home, a call, a system dialog, a hidden browser
+        // tab), so play can pause instead of carrying on without the player
+        let (controls, was_away) = input.poll(&view);
         audio.update();
         let dt = get_frame_time().min(MAX_FRAME_DT);
         game.screen_time += dt;
@@ -251,16 +234,14 @@ pub async fn run() {
             }
             Screen::Playing => {
                 // Fixed-rate physics; a long pause can't fling the branches. Some frames run no
-                // step at all, so taps wait for the next one instead of being dropped.
-                jump_queued |= controls.jump;
-                down_queued |= controls.down;
+                // step at all, so presses and releases wait for the next one instead of being
+                // dropped.
+                pending.add(&controls);
                 accumulator += dt;
                 let mut outcome = Outcome::Playing;
                 let world = game.world.as_mut().unwrap();
                 while accumulator >= STEP {
-                    let step_controls = Controls { jump: jump_queued, down: down_queued, ..controls };
-                    jump_queued = false;
-                    down_queued = false;
+                    let step_controls = pending.take(&controls);
                     accumulator -= STEP;
                     outcome = world.step(&step_controls);
                     world.collide_with_assets(&assets);
@@ -276,7 +257,7 @@ pub async fn run() {
                 set_camera(&view.screen_camera());
                 let hud = game.hud(game.world.as_ref().unwrap());
                 hud::draw(&assets, &hud, game.screen_time);
-                input::draw_buttons(&controls);
+                input.draw();
                 let world = game.world.as_ref().unwrap();
                 if controls.pause || controls.back || was_away {
                     game.go(Screen::Paused);
