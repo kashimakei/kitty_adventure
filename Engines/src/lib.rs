@@ -2,11 +2,18 @@ pub mod math;
 pub mod branch;
 pub mod ball;
 
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
+#[cfg(feature = "python")]
 use math::Vec2;
+#[cfg(feature = "python")]
 use branch::{Branch, Node, Constraint};
+#[cfg(feature = "python")]
 use ball::Ball;
 
+/// Python bindings (the `python` feature, on by default for maturin). Pure Rust users such as
+/// the macroquad build turn default features off and use the modules directly.
+#[cfg(feature = "python")]
 #[pymodule]
 fn branch_engine(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Add math submodule

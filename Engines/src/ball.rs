@@ -1,22 +1,17 @@
 use crate::math::Vec2;
 use crate::branch::Branch;
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 use std::f32::consts::PI;
 
-#[pyclass]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 #[derive(Clone, Copy, Debug)]
 pub struct Ball {
-    #[pyo3(get, set)]
     pub pos: Vec2,
-    #[pyo3(get, set)]
     pub old_pos: Vec2,
-    #[pyo3(get, set)]
     pub acc: Vec2,
-    #[pyo3(get, set)]
     pub radius: f32,
-    #[pyo3(get, set)]
     pub mass: f32,
-    #[pyo3(get, set)]
     pub restitution: f32,
     /// True if the ball was touching the plank on the previous frame (for edge-detection)
     pub touching_plank: bool,
@@ -24,9 +19,7 @@ pub struct Ball {
     pub boing_cooldown: f32,
 }
 
-#[pymethods]
 impl Ball {
-    #[new]
     pub fn new(pos: Vec2, radius: f32, density: f32, restitution: f32) -> Self {
         let mass = PI * radius * radius * density;
         Self {
@@ -41,6 +34,10 @@ impl Ball {
         }
     }
 
+}
+
+#[cfg_attr(feature = "python", pymethods)]
+impl Ball {
     pub fn update(&mut self, dt: f32, friction: f32) {
         let vel = self.pos.sub_val(self.old_pos).mul_val(friction);
         self.old_pos = self.pos;
@@ -57,7 +54,7 @@ impl Ball {
 
 /// Returns the peak normal impact speed (−vel·n) across all hit segments this sub-step,
 /// or `None` if the ball did not touch the plank at all.
-#[pyfunction]
+#[cfg_attr(feature = "python", pyfunction)]
 pub fn resolve_ball_plank_collision(ball: &mut Ball, plank: &mut Branch) -> Option<f32> {
     let mut hit = false;
     let mut max_impact_speed: f32 = 0.0;
@@ -109,7 +106,7 @@ pub fn resolve_ball_plank_collision(ball: &mut Ball, plank: &mut Branch) -> Opti
     if hit { Some(max_impact_speed) } else { None }
 }
 
-#[pyfunction]
+#[cfg_attr(feature = "python", pyfunction)]
 pub fn resolve_ball_ball_collision(b1: &mut Ball, b2: &mut Ball) {
     let dist_vec = b1.pos.sub_val(b2.pos);
     let dist_sq = dist_vec.length_sq_val();
@@ -142,5 +139,15 @@ pub fn resolve_ball_ball_collision(b1: &mut Ball, b2: &mut Ball) {
             b1.old_pos = b1.pos.sub_val(v1.add_val(impulse.mul_val(1.0 / b1.mass)));
             b2.old_pos = b2.pos.sub_val(v2.sub_val(impulse.mul_val(1.0 / b2.mass)));
         }
+    }
+}
+
+/// Python constructor lives apart so the type builds without PyO3 (the `python` feature).
+#[cfg(feature = "python")]
+#[pymethods]
+impl Ball {
+    #[new]
+    fn py_new(pos: Vec2, radius: f32, density: f32, restitution: f32) -> Self {
+        Self::new(pos, radius, density, restitution)
     }
 }
