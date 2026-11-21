@@ -52,7 +52,7 @@ NOSE_DARK = 110       # max channel value for nose-black pixels
 # be in game pixels, and its animations. Sheets painted at different sizes can set
 # "match_sheet_areas" to be scaled so the character's average silhouette area matches the
 # reference sheet's (silhouette area hardly changes with pose). Each animation is
-#   name -> (sheet, (left, top, right, bottom), anchor mode)
+#   name -> (sheet, (left, top, right, bottom), anchor mode[, scale multiplier])
 # and collects every blob whose centre falls inside the region, left to right.
 CHARACTERS = {
     "kitty": {
@@ -129,6 +129,106 @@ CHARACTERS = {
             "talon": ("eagle", (0, 1060, 2752, 1536), "head"),
         },
     },
+    # Enemies, friends, pickups and foliage generated in Gemini with the kitty and dog sheets as
+    # style references
+    "squirrel": {
+        "out": "assets/squirrel",
+        "background": (187, 187, 187),
+        "sheets": {"squirrel": "assets/source/squirrel_sheet.jpg"},
+        "reference": ("run", 0),
+        "target_height": 58,
+        "nose_to_center": 26,
+        "damage": "paws_mouth",
+        "nose_rows": (0.3, 0.92),  # skip the dark ear tufts above the snout
+        "animations": {
+            "run":   ("squirrel", (0, 40, 2400, 480), "nose"),
+            # stops short of the little acorns drawn after the last throw pose
+            "throw": ("squirrel", (0, 480, 2050, 900), "nose"),
+            "idle":  ("squirrel", (0, 900, 2400, 1360), "nose"),
+            "hurt":  ("squirrel", (0, 1360, 2400, 1792), "nose"),
+        },
+    },
+    "snake": {
+        "out": "assets/snake",
+        "background": (187, 187, 187),
+        "sheets": {"snake": "assets/source/snake_sheet.jpg"},
+        "reference": ("slither", 0),
+        "target_height": 50,
+        "damage": "mouth",
+        "animations": {
+            "slither": ("snake", (0, 100, 2400, 480), "center"),
+            "coiled":  ("snake", (0, 480, 2400, 920), "center"),
+            "strike":  ("snake", (0, 920, 2400, 1380), "center"),
+            "hurt":    ("snake", (0, 1380, 2400, 1792), "center"),
+        },
+    },
+    "crow": {
+        "out": "assets/crow",
+        "background": (187, 187, 187),
+        "sheets": {"crow": "assets/source/crow_sheet.jpg"},
+        "reference": ("fly", 0),
+        "target_height": 78,
+        "damage": "yellow",
+        "animations": {
+            "fly":     ("crow", (0, 60, 2400, 500), "centroid"),
+            "dive":    ("crow", (0, 500, 2400, 940), "centroid"),
+            "perched": ("crow", (0, 940, 2400, 1370), "center"),
+            "hurt":    ("crow", (0, 1370, 2400, 1792), "centroid"),
+        },
+    },
+    "friends": {
+        "out": "assets/friends",
+        "background": (185, 185, 185),
+        "sheets": {"friends": "assets/source/friends_sheet.jpg"},
+        "reference": ("pip_help", 0),
+        "target_height": 76,
+        # Pip's fur is nearly the background grey: key gently and leave enclosed grey alone
+        "outside_tolerance": 20,
+        "enclosed_tolerance": None,
+        # The hedgehog row also holds a faded copy of the reference kitty around x 550-1000
+        "animations": {
+            "pip_help":    ("friends", (0, 0, 560, 450), "center"),
+            "pip_cheer":   ("friends", (560, 0, 2400, 450), "center"),
+            "hazel_help":  ("friends", (0, 450, 560, 780), "center"),
+            "hazel_cheer": ("friends", (1000, 450, 2400, 780), "center"),
+            "mochi_help":  ("friends", (0, 780, 560, 1100), "center"),
+            "mochi_cheer": ("friends", (560, 780, 2400, 1100), "center"),
+            "sunny_help":  ("friends", (0, 1100, 560, 1400), "center"),
+            "sunny_cheer": ("friends", (560, 1100, 2400, 1400), "center"),
+            "luna_help":   ("friends", (0, 1400, 560, 1792), "center"),
+            "luna_cheer":  ("friends", (560, 1400, 2400, 1792), "center"),
+        },
+    },
+    "items": {
+        "out": "assets/items",
+        "background": (185, 185, 185),
+        "sheets": {"items": "assets/source/items_sheet.jpg"},
+        "reference": ("fish", 0),
+        "target_height": 30,
+        # The fish row also holds a faded copy of the reference kitty, and the sparkle burst
+        # frames are too faint to key, so only the big star is used (animated in code)
+        "animations": {
+            "fish":  ("items", (0, 100, 1250, 420), "middle"),
+            "gold":  ("items", (0, 500, 1250, 820), "middle"),
+            "heart": ("items", (0, 950, 1250, 1300), "middle"),
+            "star":  ("items", (1250, 950, 1750, 1300), "middle"),
+            "nest":  ("items", (0, 1380, 1250, 1792), "center", 1.4),
+            "acorn": ("items", (1250, 1380, 2400, 1792), "middle", 0.45),
+        },
+    },
+    "foliage": {
+        "out": "assets/foliage",
+        "background": (184, 184, 184),
+        "sheets": {"foliage": "assets/source/foliage_sheet.jpg"},
+        "reference": ("green", 5),
+        "target_height": 56,
+        "animations": {
+            "green":   ("foliage", (0, 80, 2400, 420), "middle"),
+            "autumn":  ("foliage", (0, 500, 2400, 850), "middle"),
+            "twig":    ("foliage", (0, 900, 2400, 1300), "base"),
+            "falling": ("foliage", (0, 1400, 2400, 1792), "middle", 0.45),
+        },
+    },
 }
 
 
@@ -136,13 +236,19 @@ def load_sheet(path):
     return pygame.image.load(path).convert_alpha()
 
 
-def sprite_masks(sheet, background_colour):
-    """Foreground mask of the sheet with the grey background keyed out and edges trimmed."""
-    loose = pygame.mask.from_threshold(sheet, background_colour, (OUTSIDE_TOLERANCE,) * 3 + (255,))
+def sprite_masks(sheet, spec):
+    """Foreground mask of the sheet with the grey background keyed out and edges trimmed.
+    Characters with grey fur can lower "outside_tolerance" and set "enclosed_tolerance" to None
+    so the key doesn't eat into them."""
+    background_colour = spec["background"]
+    outside = spec.get("outside_tolerance", OUTSIDE_TOLERANCE)
+    enclosed = spec.get("enclosed_tolerance", ENCLOSED_TOLERANCE)
+    loose = pygame.mask.from_threshold(sheet, background_colour, (outside,) * 3 + (255,))
     background = loose.connected_component((2, 2))
-    flat = pygame.mask.from_threshold(sheet, background_colour, (ENCLOSED_TOLERANCE,) * 3 + (255,))
-    for gap in flat.connected_components(ENCLOSED_MIN_AREA):
-        background.draw(gap, (0, 0))
+    if enclosed is not None:
+        flat = pygame.mask.from_threshold(sheet, background_colour, (enclosed,) * 3 + (255,))
+        for gap in flat.connected_components(ENCLOSED_MIN_AREA):
+            background.draw(gap, (0, 0))
     # Grow the background a little (equivalently, erode the sprites) to remove grey fringes
     kernel = pygame.mask.Mask((EDGE_TRIM * 2 + 1, EDGE_TRIM * 2 + 1), fill=True)
     grown = background.convolve(kernel, None, (-EDGE_TRIM, -EDGE_TRIM))
@@ -150,9 +256,9 @@ def sprite_masks(sheet, background_colour):
     return grown
 
 
-def find_blobs(sheet, background_colour):
+def find_blobs(sheet, spec):
     """(rect, mask) for every sprite-sized blob, top to bottom then left to right."""
-    foreground = sprite_masks(sheet, background_colour)
+    foreground = sprite_masks(sheet, spec)
     blobs = []
     for component in foreground.connected_components(MIN_SPRITE_AREA):
         rect = component.get_bounding_rects()[0]
@@ -184,10 +290,18 @@ def cut_frame(sheet, rect, mask):
 
 def anchor_for(frame, mode, nose_to_center=NOSE_TO_CENTER):
     """The point the game pins to the hitbox: under the body at the lowest pixel ("nose",
-    "center"), the topmost gripping paw ("grip"), or the middle of a white head ("head")."""
+    "center"), the topmost gripping paw ("grip"), the middle of a white head ("head"), the
+    frame's middle ("middle"), its centre of mass ("centroid") or its bottom-left ("base")."""
     w, h = frame.get_size()
     if mode == "center":
         return (w // 2, h - 1)
+    if mode == "middle":
+        return (w // 2, h // 2)
+    if mode == "base":
+        return (0, h - 1)
+    if mode == "centroid":
+        cx, cy = pygame.mask.from_surface(frame, 127).centroid()
+        return (cx, cy)
     if mode == "grip":
         solid = pygame.mask.from_surface(frame, 127)
         top = next(y for y in range(h) if any(solid.get_at((x, y)) for x in range(w)))
@@ -205,20 +319,21 @@ def is_golden(colour):
     return r >= 200 and 120 <= g <= 225 and b <= 110 and r - b >= 110
 
 
-def find_nose(frame, solid):
-    """Centre of the frontmost thick dark blob of a right-facing pose (above the paws)."""
+def find_nose(frame, solid, rows=(0.0, 0.92)):
+    """Centre of the frontmost thick dark blob of a right-facing pose, searching the band of rows
+    given as fractions of the height (above the paws; below a squirrel's dark ear tufts)."""
     w, h = frame.get_size()
     def dark(x, y):
         return solid.get_at((x, y)) and max(frame.get_at((x, y))[:3]) <= NOSE_DARK
     for x in range(w - 2, 0, -1):
-        ys = [y for y in range(1, int(h * 0.92))
+        ys = [y for y in range(max(1, int(h * rows[0])), int(h * rows[1]))
               if all(dark(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1))]
         if ys:
             return x, sum(ys) / len(ys)
     return w - 1, h * 0.3
 
 
-def damage_mask(frame, rule, paw_strip_from=0.0):
+def damage_mask(frame, rule, paw_strip_from=0.0, nose_rows=(0.0, 0.92)):
     """White where this frame can hurt Kitty, transparent elsewhere."""
     w, h = frame.get_size()
     solid = pygame.mask.from_surface(frame, 127)
@@ -230,12 +345,13 @@ def damage_mask(frame, rule, paw_strip_from=0.0):
                     hit.set_at((x, y))
         kernel = pygame.mask.Mask((CLAW_REACH * 2 + 1,) * 2, fill=True)
         hit = solid.overlap_mask(hit.convolve(kernel, None, (-CLAW_REACH, -CLAW_REACH)), (0, 0))
-    elif rule == "paws_mouth":
-        for y in range(h - round(h * PAW_BAND), h):
-            for x in range(int(w * paw_strip_from), w):
-                if solid.get_at((x, y)):
-                    hit.set_at((x, y))
-        nose_x, nose_y = find_nose(frame, solid)
+    elif rule in ("paws_mouth", "mouth"):
+        if rule == "paws_mouth":
+            for y in range(h - round(h * PAW_BAND), h):
+                for x in range(int(w * paw_strip_from), w):
+                    if solid.get_at((x, y)):
+                        hit.set_at((x, y))
+        nose_x, nose_y = find_nose(frame, solid, nose_rows)
         cx, cy = nose_x - 4, nose_y + 4  # nose and the jaws just behind and below it
         for y in range(h):
             for x in range(w):
@@ -246,17 +362,17 @@ def damage_mask(frame, rule, paw_strip_from=0.0):
 
 def slice_character(name, spec):
     sheets = {sheet: load_sheet(path) for sheet, path in spec["sheets"].items()}
-    blobs = {sheet: find_blobs(surface, spec["background"]) for sheet, surface in sheets.items()}
+    blobs = {sheet: find_blobs(surface, spec) for sheet, surface in sheets.items()}
 
     # Collect each animation's blobs from its region
     picked = {}
-    for anim, (sheet_name, (left, top, right, bottom), mode) in spec["animations"].items():
+    for anim, (sheet_name, (left, top, right, bottom), mode, *extra) in spec["animations"].items():
         region = [b for b in blobs[sheet_name]
                   if left <= b[0].centerx < right and top <= b[0].centery < bottom]
         region.sort(key=lambda b: b[0].centerx)
         if not region:
             sys.exit(f"No sprites found for {name} {anim!r}; check its region with --index")
-        picked[anim] = (sheet_name, region, mode)
+        picked[anim] = (sheet_name, region, mode, extra[0] if extra else 1.0)
 
     ref_anim, ref_index = spec["reference"]
     ref_sheet = picked[ref_anim][0]
@@ -264,7 +380,7 @@ def slice_character(name, spec):
     sheet_scales = {sheet: scale for sheet in sheets}
     if spec.get("match_sheet_areas"):
         def mean_area(sheet):
-            areas = [mask.count() for sheet_name, region, _ in picked.values() if sheet_name == sheet
+            areas = [mask.count() for sheet_name, region, _, _ in picked.values() if sheet_name == sheet
                      for _, mask in region]
             return sum(areas) / len(areas)
         for sheet in sheets:
@@ -276,11 +392,11 @@ def slice_character(name, spec):
         if old.endswith(".png"):
             os.remove(os.path.join(out_dir, old))
     manifest = {"scale": scale, "animations": {}, "anchors": {}, "hits": {}}
-    for anim, (sheet_name, region, mode) in picked.items():
+    for anim, (sheet_name, region, mode, multiplier) in picked.items():
         names = []
         for i, (rect, mask) in enumerate(region):
             frame = cut_frame(sheets[sheet_name], rect, mask)
-            frame_scale = sheet_scales[sheet_name]
+            frame_scale = sheet_scales[sheet_name] * multiplier
             size = (max(1, round(rect.width * frame_scale)), max(1, round(rect.height * frame_scale)))
             frame = pygame.transform.smoothscale(frame, size)
             frame_name = f"{anim}_{i}.png"
@@ -289,7 +405,8 @@ def slice_character(name, spec):
             if spec.get("damage"):
                 hit_name = f"{anim}_{i}_hit.png"
                 strip_from = spec.get("paw_strip_from", {}).get(anim, 0.0)
-                pygame.image.save(damage_mask(frame, spec["damage"], strip_from), os.path.join(out_dir, hit_name))
+                mask = damage_mask(frame, spec["damage"], strip_from, spec.get("nose_rows", (0.0, 0.92)))
+                pygame.image.save(mask, os.path.join(out_dir, hit_name))
                 manifest["hits"][frame_name] = hit_name
             names.append(frame_name)
         manifest["animations"][anim] = names
@@ -310,7 +427,7 @@ def main():
             spec = CHARACTERS[name]
             for sheet_name, path in spec["sheets"].items():
                 sheet = load_sheet(path)
-                index_image(f"{name}/{sheet_name}", sheet, find_blobs(sheet, spec["background"]),
+                index_image(f"{name}/{sheet_name}", sheet, find_blobs(sheet, spec),
                             os.path.join(out_dir, f"index_{name}_{sheet_name}.png"))
         return
     for name in [a for a in args if a in CHARACTERS] or list(CHARACTERS):

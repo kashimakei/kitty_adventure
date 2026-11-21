@@ -123,7 +123,7 @@ impl Tree {
     fn new(x: f32, y: f32, direction: f32, length: f32, thickness: f32, stiffness: f32, seed: u64) -> Self {
         let segments = ((length / 18.0).round() as usize).max(8);
         let mut branch = Branch::new_tree_branch(
-            EngineVec2::new(x, y), length, thickness, segments, stiffness, 0.6, direction, seed,
+            EngineVec2::new(x, y), length, thickness, segments, stiffness, 0.6, direction, seed, 0.0,
         );
         // Settle under its own weight, then start perfectly still
         for _ in 0..120 {

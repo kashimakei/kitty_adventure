@@ -1,0 +1,95 @@
+{
+  "scale": 0.15706806282722513,
+  "animations": {
+    "fish": [
+      "fish_0.png",
+      "fish_1.png",
+      "fish_2.png"
+    ],
+    "gold": [
+      "gold_0.png",
+      "gold_1.png",
+      "gold_2.png"
+    ],
+    "heart": [
+      "heart_0.png",
+      "heart_1.png",
+      "heart_2.png"
+    ],
+    "star": [
+      "star_0.png"
+    ],
+    "nest": [
+      "nest_0.png",
+      "nest_1.png"
+    ],
+    "acorn": [
+      "acorn_0.png",
+      "acorn_1.png",
+      "acorn_2.png"
+    ]
+  },
+  "anchors": {
+    "fish_0.png": [
+      23,
+      15
+    ],
+    "fish_1.png": [
+      23,
+      14
+    ],
+    "fish_2.png": [
+      23,
+      15
+    ],
+    "gold_0.png": [
+      23,
+      15
+    ],
+    "gold_1.png": [
+      23,
+      15
+    ],
+    "gold_2.png": [
+      23,
+      15
+    ],
+    "heart_0.png": [
+      17,
+      15
+    ],
+    "heart_1.png": [
+      20,
+      17
+    ],
+    "heart_2.png": [
+      17,
+      15
+    ],
+    "star_0.png": [
+      16,
+      15
+    ],
+    "nest_0.png": [
+      52,
+      57
+    ],
+    "nest_1.png": [
+      51,
+      62
+    ],
+    "acorn_0.png": [
+      8,
+      10
+    ],
+    "acorn_1.png": [
+      8,
+      8
+    ],
+    "acorn_2.png": [
+      8,
+      8
+    ]
+  },
+  "hits": {}
+}
