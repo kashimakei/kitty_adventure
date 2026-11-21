@@ -489,6 +489,10 @@ impl Enemy for Crow {
         stompable.then(|| faced(STOMP_AREA, self.pos, self.facing))
     }
 
+    fn in_front(&self) -> bool {
+        matches!(self.state, State::Dive { .. })
+    }
+
     fn stomped(&mut self) {
         let perch = match self.state {
             State::Perched { perch, .. } | State::PerchTell { perch, .. } => Some(perch),

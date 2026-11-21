@@ -761,11 +761,12 @@ pub fn draw_level_clear(assets: &Assets, info: &LevelInfo, tally: &Tally, time: 
     }
 }
 
-pub fn draw_game_over(assets: &Assets, score: u32, high_score: u32, time: f32) {
+/// `previous_best` is the high score from before this game, so beating it shows the ribbon.
+pub fn draw_game_over(assets: &Assets, score: u32, previous_best: u32, time: f32) {
     let t = ambient_time();
     backdrop(assets, Mood::Night);
-    // finish_game has already folded this score into the best, so a match is a new record
-    let new_best = score > 0 && score >= high_score;
+    let new_best = score > previous_best;
+    let high_score = score.max(previous_best);
 
     let drop = ease_out_back(time / 0.7);
     outlined("Game Over", 300.0, 170.0 - (1.0 - drop) * 200.0, fit_size("Game Over", 84.0, 560.0),

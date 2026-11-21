@@ -1,5 +1,7 @@
 //! One level in play: the trees and their limbs, pickups, enemies, Kitty and the camera.
 
+use std::f32::consts::TAU;
+
 use macroquad::prelude::*;
 
 use crate::camera::{Camera, View};
@@ -115,7 +117,7 @@ impl World {
         let goal = limbs.iter().position(|l| l.is_goal).unwrap_or(0);
 
         let trees = plan.tree_xs.iter().map(|&x| Tree::new(x, plan.top_y, &mut rng)).collect();
-        let items = plan.items.iter().map(|i| Item::new(i.kind, i.limb, i.frac, rng.range(0.0, 6.28))).collect();
+        let items = plan.items.iter().map(|i| Item::new(i.kind, i.limb, i.frac, rng.range(0.0, TAU))).collect();
         let mut enemies: Vec<Box<dyn Enemy>> = Vec::new();
         for &(limb, frac) in &plan.squirrel_spots {
             enemies.push(Box::new(enemies::squirrel::Squirrel::new(limb, frac)));
@@ -458,26 +460,29 @@ impl World {
         // The friend waiting in the nest
         let nest = self.nest_position();
         assets.items.draw("nest_0", nest + vec2(0.0, 14.0), 1.0, WHITE);
-        let friend = self.friend.sprite();
         if self.rescued {
-            let frame = (self.rescue_time * 6.0) as usize % self.friend.cheer_frames();
+            let frame = self.friend.cheer_frame((self.rescue_time * 6.0) as usize);
             let hop = ((self.rescue_time * 6.0).sin().abs()) * 18.0;
-            assets.friends.draw(&format!("{friend}_cheer_{frame}"), nest - vec2(0.0, 4.0 + hop), 1.0, WHITE);
+            assets.friends.draw(&frame, nest - vec2(0.0, 4.0 + hop), 1.0, WHITE);
         } else {
             let bob = (self.time * 2.0).sin() * 2.0;
-            assets.friends.draw(&format!("{friend}_help_0"), nest - vec2(0.0, 4.0 + bob), -1.0, WHITE);
+            assets.friends.draw(&self.friend.help_frame(), nest - vec2(0.0, 4.0 + bob), -1.0, WHITE);
         }
 
         for item in &self.items {
             item.draw(assets, &self.limbs, self.time);
         }
-        for enemy in &self.enemies {
+        // Anything mid-strike draws over Kitty so a lunging jaw or beak isn't hidden behind her
+        for enemy in self.enemies.iter().filter(|e| !e.in_front()) {
             enemy.draw(assets);
         }
         for acorn in &self.projectiles {
             acorn.draw(assets);
         }
         self.kitty.draw(assets, kitty_offset);
+        for enemy in self.enemies.iter().filter(|e| e.in_front()) {
+            enemy.draw(assets);
+        }
         self.effects.draw(assets);
 
         if self.rescued {

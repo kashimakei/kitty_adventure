@@ -285,7 +285,7 @@ impl Kitty {
         let candidates = std::iter::once(Support::Ground).chain((0..limbs.len()).map(Support::Limb));
         for support in candidates {
             if let Some(s) = self.support_surface(support, limbs, &feet) {
-                if self.prev_y <= s + LANDING_TOLERANCE && self.y >= s && best.map_or(true, |(_, b)| s < b) {
+                if self.prev_y <= s + LANDING_TOLERANCE && self.y >= s && best.is_none_or(|(_, b)| s < b) {
                     best = Some((support, s));
                 }
             }

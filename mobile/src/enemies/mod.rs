@@ -83,6 +83,10 @@ pub trait Enemy {
     }
     /// Kitty landed on it from above.
     fn stomped(&mut self) {}
+    /// Draw over Kitty rather than behind her (while striking at her).
+    fn in_front(&self) -> bool {
+        false
+    }
     /// False once it should be removed from the world.
     fn alive(&self) -> bool;
     /// Roughly its middle, for knockback direction and spawning distance checks.

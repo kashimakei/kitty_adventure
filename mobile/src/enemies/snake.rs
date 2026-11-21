@@ -319,6 +319,10 @@ impl Enemy for Snake {
         (self.placed && self.healthy() && !self.mid_lunge()).then(|| faced(STOMP_AREA, self.pos, self.facing))
     }
 
+    fn in_front(&self) -> bool {
+        self.mid_lunge()
+    }
+
     fn stomped(&mut self) {
         if self.healthy() && !self.mid_lunge() {
             self.offset = Vec2::ZERO;

@@ -1,6 +1,8 @@
 //! Little bits of life: sparkles and score pop-ups when something is collected, and leaves that
 //! drift down in the breeze or get shaken loose when Kitty lands on a branch.
 
+use std::f32::consts::TAU;
+
 use macroquad::prelude::*;
 
 use crate::rng::Rng;
@@ -39,10 +41,10 @@ impl Effects {
         self.list.push(Effect::Leaf {
             pos,
             vel: vec2(rng.range(-20.0, 20.0), rng.range(20.0, 50.0)),
-            rotation: rng.range(0.0, 6.28),
+            rotation: rng.range(0.0, TAU),
             spin: rng.range(-2.0, 2.0),
             sprite: *rng.pick(&FALLING),
-            sway: rng.range(0.0, 6.28),
+            sway: rng.range(0.0, TAU),
             age: 0.0,
         });
     }

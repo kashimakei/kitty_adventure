@@ -69,6 +69,8 @@ struct Game {
     lives: u32,
     score: u32,
     high_score: u32,
+    /// The high score before the current game, for the game-over screen.
+    previous_best: u32,
     friends_rescued: usize,
     seed: u64,
 }
@@ -84,6 +86,7 @@ impl Game {
             lives: START_LIVES,
             score: 0,
             high_score: save::load_high_score(),
+            previous_best: 0,
             friends_rescued: 0,
             seed: (macroquad::miniquad::date::now() * 1000.0) as u64,
         }
@@ -110,6 +113,7 @@ impl Game {
     }
 
     fn finish_game(&mut self) {
+        self.previous_best = self.high_score;
         self.high_score = self.high_score.max(self.score);
         save::save_high_score(self.high_score);
     }
@@ -287,7 +291,7 @@ pub async fn run() {
             }
             Screen::GameOver => {
                 set_camera(&view.screen_camera());
-                story::draw_game_over(&assets, game.score, game.high_score, game.screen_time);
+                story::draw_game_over(&assets, game.score, game.previous_best, game.screen_time);
                 if controls.any_tap && game.screen_time > 1.0 {
                     game.go(Screen::Title);
                 }
