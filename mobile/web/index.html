@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Kitty Adventure (macroquad spike)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <style>
+        html, body, canvas { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+                             position: absolute; background: #1c1c24; z-index: 0; touch-action: none; }
+    </style>
+</head>
+<body>
+    <canvas id="glcanvas" tabindex="1"></canvas>
+    <!-- Loader shipped with macroquad 0.4.14 (copied from the crate's js/ folder) -->
+    <script src="mq_js_bundle.js"></script>
+    <script>load("kitty_mobile.wasm");</script>
+</body>
+</html>

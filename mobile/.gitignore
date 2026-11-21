@@ -1,0 +1,4 @@
+# Built output and assets staged from ../assets by build.sh
+target/
+dist/
+assets/
