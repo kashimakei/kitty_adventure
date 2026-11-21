@@ -9,9 +9,13 @@ cd "$(dirname "$0")"
 
 stage_assets() {
     rm -rf assets
-    mkdir -p assets/kitty
-    cp ../assets/kitty/*.png ../assets/kitty/anchors.json assets/kitty/
+    mkdir -p assets/sounds
+    for character in kitty dog eagle squirrel snake crow friends items foliage; do
+        mkdir -p "assets/$character"
+        cp ../assets/"$character"/*.png ../assets/"$character"/anchors.json "assets/$character/"
+    done
     cp ../assets/Background_lvl1.png assets/background.png
+    cp ../assets/meow.wav ../assets/meow2.wav ../assets/hiss.wav ../assets/crunch.wav ../assets/BGM.ogg assets/sounds/
 }
 
 case "${1:-web}" in
@@ -26,7 +30,7 @@ case "${1:-web}" in
         rm -rf dist
         mkdir -p dist
         cp web/index.html web/mq_js_bundle.js dist/
-        cp target/wasm32-unknown-unknown/release/kitty_mobile.wasm dist/
+        cp target/wasm32-unknown-unknown/release/kitty.wasm dist/
         cp -r assets/* dist/
         echo "Built dist/ ($(du -sh dist | cut -f1)); serve with: python3 -m http.server -d dist 8000" ;;
     android)
