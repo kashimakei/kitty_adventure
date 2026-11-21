@@ -213,25 +213,44 @@ impl Limb {
             let size = rng.int(*sizes.start() as i32, *sizes.end() as i32) as usize;
             if rng.chance(autumn) { FOLIAGE_AUTUMN[size] } else { FOLIAGE_GREEN[size] }
         };
-        // A bushy clump at the tip
+        // A bushy clump at the tip: a big tuft with a smaller one tucked behind and one hanging
+        // below, so the end of the limb reads as leafy rather than a single sticker
         let tip_size = if thin { 1..=2 } else if self.attachment.is_some() { 2..=4 } else { 3..=5 };
-        let sprite = pick(rng, tip_size);
-        self.decorations.push(Decoration {
-            sprite, node: segments, offset: vec2(8.0, -10.0), scale: rng.range(0.85, 1.1),
-            rotation: rng.range(-0.15, 0.15), front: true, sway_phase: rng.range(0.0, 6.3),
-        });
-        // Smaller tufts along the outer part, mostly behind the wood so the walkway stays clear
-        let start = (segments as f32 * if thin { 0.6 } else { 0.4 }) as usize;
-        let mut node = start.max(2);
-        while node < segments {
-            let sprite = pick(rng, 0..=if thin { 1 } else { 3 });
-            let above = rng.chance(0.65);
+        let clump = [
+            (vec2(-14.0, -16.0), 0.75, false),
+            (vec2(8.0, -10.0), 1.0, true),
+            (vec2(-4.0, self.thickness * 0.45), 0.7, true),
+        ];
+        for (offset, scale, front) in clump {
+            let size = pick(rng, tip_size.clone());
             self.decorations.push(Decoration {
-                sprite, node, offset: vec2(rng.range(-6.0, 6.0), if above { -6.0 } else { self.thickness * 0.5 }),
-                scale: rng.range(0.7, 1.0), rotation: rng.range(-0.3, 0.3), front: !above && rng.chance(0.4),
+                sprite: size, node: segments, offset: offset + vec2(rng.range(-4.0, 4.0), rng.range(-3.0, 3.0)),
+                scale: scale * rng.range(0.85, 1.1), rotation: rng.range(-0.2, 0.2), front,
                 sway_phase: rng.range(0.0, 6.3),
             });
-            node += rng.int(2, 3) as usize;
+        }
+        // Tufts along the outer part, alternating above and below; the ones above sit behind the
+        // wood so the walkway stays clear
+        let start = (segments as f32 * if thin { 0.5 } else { 0.3 }) as usize;
+        let mut node = start.max(2);
+        let mut above = rng.chance(0.5);
+        while node < segments {
+            let sprite = pick(rng, 0..=if thin { 1 } else { 3 });
+            self.decorations.push(Decoration {
+                sprite, node, offset: vec2(rng.range(-6.0, 6.0), if above { -6.0 } else { self.thickness * 0.5 }),
+                scale: rng.range(0.7, 1.0), rotation: rng.range(-0.3, 0.3), front: !above && rng.chance(0.5),
+                sway_phase: rng.range(0.0, 6.3),
+            });
+            above = !above || rng.chance(0.3);
+            node += rng.int(1, 2) as usize;
+        }
+        // A few sprigs nearer the trunk
+        for _ in 0..rng.int(1, 2) {
+            let node = rng.int(1, start.max(2) as i32) as usize;
+            self.decorations.push(Decoration {
+                sprite: pick(rng, 0..=1), node, offset: vec2(0.0, -5.0), scale: rng.range(0.6, 0.85),
+                rotation: rng.range(-0.4, 0.4), front: false, sway_phase: rng.range(0.0, 6.3),
+            });
         }
         // A twig or two poking out of sturdy limbs
         if !thin {

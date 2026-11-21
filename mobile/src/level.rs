@@ -302,3 +302,32 @@ fn new_branch(rng: &mut Rng, d: &Difficulty, (tree, direction): (usize, f32), y:
         goal,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every generated level has one goal, and each path branch is within a jump of the one below.
+    #[test]
+    fn levels_are_climbable() {
+        for level in 1..=STORY_LEVELS {
+            for lap in 0..4 {
+                for seed in 0..200 {
+                    let plan = generate(level, lap, seed);
+                    assert_eq!(plan.branches.iter().filter(|b| b.goal).count(), 1);
+                    let path: Vec<&BranchPlan> = plan.branches.iter().filter(|b| b.on_path).collect();
+                    let mut below = (WORLD_W / 2.0 - 50.0, WORLD_W / 2.0 + 50.0, 10.0);
+                    for b in path {
+                        let s = span(&plan.tree_xs, (b.tree, b.direction), b.length);
+                        assert!(below.2 - b.y <= MAX_BRANCH_GAP + 1.0, "gap too tall: level {level} lap {lap} seed {seed}");
+                        assert!(gap_between(s, (below.0, below.1)) <= MAX_BRANCH_HOP + 1.0);
+                        below = (s.0, s.1, b.y);
+                    }
+                    for item in &plan.items {
+                        assert!(item.limb < plan.branches.len() + plan.forks.len());
+                    }
+                }
+            }
+        }
+    }
+}

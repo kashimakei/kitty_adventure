@@ -39,6 +39,10 @@ pub struct World {
     spawner: Spawner,
     pub kitty: Kitty,
     pub camera: Camera,
+    /// Where the camera and Kitty were before the last step, so frames drawn between steps (the
+    /// screen may refresh at 90 or 120 Hz) can blend between the two instead of stuttering.
+    prev_camera: Vec2,
+    prev_kitty: Vec2,
     effects: Effects,
     rng: Rng,
     pub time: f32,
@@ -138,6 +142,8 @@ impl World {
             enemies,
             projectiles: Vec::new(),
             spawner,
+            prev_camera: vec2(camera.x, camera.y),
+            prev_kitty: vec2(kitty.x, kitty.y),
             kitty,
             camera,
             effects: Effects::default(),
@@ -203,6 +209,8 @@ impl World {
     pub fn respawn_kitty(&mut self) {
         self.kitty.respawn(self.start_x);
         self.camera.snap_to(self.kitty.rect());
+        self.prev_camera = vec2(self.camera.x, self.camera.y);
+        self.prev_kitty = vec2(self.kitty.x, self.kitty.y);
         self.projectiles.clear();
         // Give her room to breathe
         let start = vec2(self.start_x, GROUND_Y);
@@ -210,6 +218,8 @@ impl World {
     }
 
     pub fn step(&mut self, controls: &Controls) -> Outcome {
+        self.prev_camera = vec2(self.camera.x, self.camera.y);
+        self.prev_kitty = vec2(self.kitty.x, self.kitty.y);
         self.time += STEP;
         let wind = self.difficulty.wind;
         self.breeze = 1.5 + wind * ((0.5 * self.time).sin() + 0.3 * (1.7 * self.time + 1.0).sin());
@@ -405,22 +415,27 @@ impl World {
         self.effects.update(dt, self.breeze, view);
     }
 
-    pub fn draw(&self, assets: &Assets, view: &View) {
+    /// `blend` is how far the clock is between the last step and the next (0..1).
+    pub fn draw(&self, assets: &Assets, view: &View, blend: f32) {
+        let blend = blend.clamp(0.0, 1.0);
+        let at = self.prev_camera.lerp(vec2(self.camera.x, self.camera.y), blend);
+        let camera = Camera { x: at.x, y: at.y };
+        let kitty_offset = self.prev_kitty.lerp(vec2(self.kitty.x, self.kitty.y), blend) - vec2(self.kitty.x, self.kitty.y);
         // Sky darkens a little as Kitty climbs, then the forest backdrop pans slowly behind
         set_camera(&view.screen_camera());
-        let climb = (self.camera.height() / (-self.top_y).max(1.0)).clamp(0.0, 1.0);
+        let climb = (camera.height() / (-self.top_y).max(1.0)).clamp(0.0, 1.0);
         let top = Color::new(SKY.r + (SKY_HIGH.r - SKY.r) * climb, SKY.g + (SKY_HIGH.g - SKY.g) * climb,
                              SKY.b + (SKY_HIGH.b - SKY.b) * climb, 1.0);
         draw_rectangle(0.0, 0.0, VIEW_W, VIEW_H, top);
-        set_camera(&self.camera.world_camera(view));
+        set_camera(&camera.world_camera(view));
         let bg = &assets.background;
         let bg_w = VIEW_W + (WORLD_W - VIEW_W) * BACKGROUND_PARALLAX;
         let bg_h = bg_w * bg.height() / bg.width();
-        let bg_x = self.camera.x * (1.0 - BACKGROUND_PARALLAX);
-        let bg_y = GROUND_Y + 80.0 - bg_h + (self.camera.y - (GROUND_Y + CAMERA_GROUND_SHOWN - VIEW_H)) * 0.85;
+        let bg_x = camera.x * (1.0 - BACKGROUND_PARALLAX);
+        let bg_y = GROUND_Y + 80.0 - bg_h + (camera.y - (GROUND_Y + CAMERA_GROUND_SHOWN - VIEW_H)) * 0.85;
         draw_texture_ex(bg, bg_x, bg_y, WHITE, DrawTextureParams { dest_size: Some(vec2(bg_w, bg_h)), ..Default::default() });
 
-        let view_rect = self.camera.view_rect();
+        let view_rect = camera.view_rect();
         let visible = |r: Rect| r.overlaps(&Rect::new(view_rect.x - 120.0, view_rect.y - 120.0, view_rect.w + 240.0, view_rect.h + 240.0));
         // Leaves behind the wood, the wood, then trunks over the limbs' roots, then leaves in front
         for limb in self.limbs.iter().filter(|l| visible(l.bounds())) {
@@ -462,7 +477,7 @@ impl World {
         for acorn in &self.projectiles {
             acorn.draw(assets);
         }
-        self.kitty.draw(assets);
+        self.kitty.draw(assets, kitty_offset);
         self.effects.draw(assets);
 
         if self.rescued {

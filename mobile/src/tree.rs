@@ -32,6 +32,15 @@ pub fn make_bark_texture(rng: &mut Rng) -> Texture2D {
     for x in [0, 1, 2, 3, w as u32 - 4, w as u32 - 3, w as u32 - 2, w as u32 - 1] {
         stroke(x, 0, h as u32, 1, BARK_DARK);
     }
+    // Shade it round: light catching the left of centre, falling off into shadow at the edges
+    for x in 0..w as u32 {
+        let t = x as f32 / (w - 1) as f32;
+        let shade = 1.12 - ((t - 0.38) * 2.0).powi(2) * 0.5;
+        for y in 0..h as u32 {
+            let c = image.get_pixel(x, y);
+            image.set_pixel(x, y, Color::new(c.r * shade, c.g * shade, c.b * shade, 1.0));
+        }
+    }
     let texture = Texture2D::from_image(&image);
     texture.set_filter(FilterMode::Linear);
     texture
