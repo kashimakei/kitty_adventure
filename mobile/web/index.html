@@ -13,6 +13,32 @@
     <canvas id="glcanvas" tabindex="1"></canvas>
     <!-- Loader shipped with macroquad 0.4.14 (copied from the crate's js/ folder) -->
     <script src="mq_js_bundle.js"></script>
-    <script>load("kitty.wasm");</script>
+    <script>
+        // The high score lives in localStorage (see src/save.rs). Private windows and blocked
+        // storage throw, so every access is guarded: the game just starts from 0.
+        miniquad_add_plugin({
+            name: "kitty_storage",
+            version: 1,
+            register_plugin: function (importObject) {
+                var key = "kitty-adventure.high-score";
+                importObject.env.kitty_storage_load = function () {
+                    try {
+                        var score = parseInt(window.localStorage.getItem(key), 10);
+                        return score > 0 ? score >>> 0 : 0;
+                    } catch (e) {
+                        return 0;
+                    }
+                };
+                importObject.env.kitty_storage_save = function (score) {
+                    try {
+                        window.localStorage.setItem(key, String(score >>> 0));
+                    } catch (e) {
+                        console.warn("couldn't save the high score: " + e);
+                    }
+                };
+            },
+        });
+        load("kitty.wasm");
+    </script>
 </body>
 </html>
