@@ -225,7 +225,7 @@ pub async fn run() {
                     }
                 }
                 world.animate(dt);
-                world.draw(&assets, &view);
+                world.draw(&assets, &view, accumulator / STEP);
                 set_camera(&view.screen_camera());
                 let hud = game.hud(game.world.as_ref().unwrap());
                 hud::draw(&assets, &hud, game.screen_time);
@@ -250,7 +250,7 @@ pub async fn run() {
             }
             Screen::Paused => {
                 let world = game.world.as_ref().unwrap();
-                world.draw(&assets, &view);
+                world.draw(&assets, &view, 1.0);
                 set_camera(&view.screen_camera());
                 story::draw_paused(game.screen_time);
                 if (controls.pause || controls.any_tap) && game.screen_time > 0.3 {
@@ -263,7 +263,7 @@ pub async fn run() {
                 let timer = *timer;
                 let world = game.world.as_mut().unwrap();
                 world.animate(dt);
-                world.draw(&assets, &view);
+                world.draw(&assets, &view, 1.0);
                 set_camera(&view.screen_camera());
                 story::draw_life_lost(game.lives, timer);
                 if timer > 1.6 {

@@ -373,10 +373,12 @@ impl Kitty {
         self.jumped = true;
     }
 
-    /// Letting go of jump early ends the climb, so taps make little hops.
+    /// Letting go of jump early ends the climb, so taps make little hops. A touch tap can be
+    /// over within a step or two, so the first few steps always count, and the cut eases off
+    /// rather than stopping dead.
     pub fn stop_jump(&mut self) {
-        if self.jump {
-            self.velocity = self.velocity.max(KITTY_GRAVITY);
+        if self.jump && self.jump_steps >= KITTY_MIN_JUMP_STEPS {
+            self.velocity *= 0.35;
             self.falling = true;
             self.jump = false;
         }
@@ -522,7 +524,8 @@ impl Kitty {
         self.clip_time += dt;
     }
 
-    pub fn draw(&self, assets: &Assets) {
+    /// `offset` shifts the drawing only (World uses it to blend between physics steps).
+    pub fn draw(&self, assets: &Assets, offset: Vec2) {
         // Blink while invulnerable
         if self.invulnerable > 0 && (self.invulnerable / 5) % 2 == 1 {
             return;
@@ -535,6 +538,6 @@ impl Kitty {
             Pin::Grip => self.top(),
             Pin::Feet => self.y,
         };
-        assets.kitty.draw(name, vec2(self.x, pin_y), self.facing, WHITE);
+        assets.kitty.draw(name, vec2(self.x, pin_y) + offset, self.facing, WHITE);
     }
 }
