@@ -129,7 +129,7 @@ impl Threat {
             Threat::Squirrels => "Cheeky squirrels toss acorns from the branches. Dodge them, or bop the squirrel from above!",
             Threat::Dogs => "Dogs patrol the ground and leap up at low branches. Climb high to stay out of reach!",
             Threat::Snakes => "Snakes lie coiled on branches and strike when you come close. Hop over them, or bop them on the head!",
-            Threat::Crows => "Crows circle overhead, then dive! Watch them swoop and step aside just in time.",
+            Threat::Crows => "Crows flap overhead and dive beak-first! When one hovers, step aside just in time.",
             Threat::Eagles => "Eagles sweep in fast from the edge of the sky. Keep moving and dodge their dive!",
         }
     }
@@ -647,7 +647,7 @@ fn basics_card(assets: &Assets, top: f32, alpha: f32) {
     let rows = [
         (TipIcon::Stomp, "Jump on squirrels, snakes and crows from above to bop them."),
         (TipIcon::Treats, "Fish treats give points (golden ones give more), and hearts heal."),
-        (TipIcon::Snap, "Thin branches can snap under you, so don't dawdle!"),
+        (TipIcon::Snap, "Thin pale branches hold you or a dog, but snap under both!"),
         (TipIcon::Hang, "Fall past a branch to grab it. Jump to climb up, down to let go."),
     ];
     let (size, spacing, text_w) = (22.0, 1.3, 440.0);
@@ -667,7 +667,7 @@ fn basics_card(assets: &Assets, top: f32, alpha: f32) {
                 fit_sprite_centred(&assets.kitty, "land_1", at + vec2(0.0, -10.0), 44.0, 1.0, white);
             }
             TipIcon::Treats => {
-                assets.items.draw_ex("fish_0", at + vec2(-12.0, -10.0), 1.0, 0.65, -0.3, white);
+                assets.items.draw_ex("fish_1", at + vec2(-12.0, -10.0), 1.0, 0.65, -0.3, white);
                 assets.items.draw_ex("gold_0", at + vec2(12.0, 2.0), 1.0, 0.65, 0.2, white);
                 assets.items.draw_ex("heart_0", at + vec2(-10.0, 16.0), 1.0, 0.6, 0.0, white);
             }

@@ -213,6 +213,9 @@ CHARACTERS = {
         "sheets": {"items": "assets/source/items_sheet.jpg"},
         "reference": ("fish", 0),
         "target_height": 30,
+        # The silver fish are nearly the background grey: key gently and leave enclosed grey alone
+        "outside_tolerance": 22,
+        "enclosed_tolerance": None,
         # The fish row also holds a faded copy of the reference kitty, and the sparkle burst
         # frames are too faint to key, so only the big star is used (animated in code)
         "animations": {

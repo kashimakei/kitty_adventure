@@ -12,7 +12,7 @@ use crate::input::Controls;
 use crate::items::{Item, ItemKind};
 use crate::kitty::{Kitty, Push, Support};
 use crate::level::{self, Difficulty, LevelPlan};
-use crate::limb::{Attachment, Limb, LimbId, LimbSpec};
+use crate::limb::{self, Attachment, Limb, LimbId, LimbSpec};
 use crate::rng::Rng;
 use crate::sprites::Assets;
 use crate::story::{self, Friend};
@@ -33,6 +33,8 @@ pub struct World {
     pub friend: Friend,
     trees: Vec<Tree>,
     bark: Texture2D,
+    /// Bark grain running along the limbs.
+    grain: Texture2D,
     pub limbs: Vec<Limb>,
     pub goal: LimbId,
     items: Vec<Item>,
@@ -95,6 +97,7 @@ impl World {
             difficulty,
             trees,
             bark,
+            grain: limb::make_grain_texture(),
             limbs,
             goal,
             items,
@@ -371,32 +374,25 @@ impl World {
         let at = self.prev_camera.lerp(vec2(self.camera.x, self.camera.y), blend);
         let camera = Camera { x: at.x, y: at.y };
         let kitty_offset = self.prev_kitty.lerp(vec2(self.kitty.x, self.kitty.y), blend) - vec2(self.kitty.x, self.kitty.y);
-        // Sky darkens a little as Kitty climbs, then the forest backdrop pans slowly behind
+        // The sky and the painted scenery behind the trees, sliding at their own paces
         set_camera(&view.screen_camera());
-        let climb = (camera.height() / (-self.top_y).max(1.0)).clamp(0.0, 1.0);
-        let top = Color::new(SKY.r + (SKY_HIGH.r - SKY.r) * climb, SKY.g + (SKY_HIGH.g - SKY.g) * climb,
-                             SKY.b + (SKY_HIGH.b - SKY.b) * climb, 1.0);
-        draw_rectangle(0.0, 0.0, VIEW_W, VIEW_H, top);
+        let climbed = camera.height();
+        let height = (climbed / (-self.top_y).max(1.0)).clamp(0.0, 1.0);
+        assets.scenery.draw(camera.x, climbed, height, self.time);
         set_camera(&camera.world_camera(view));
-        let bg = &assets.background;
-        let bg_w = VIEW_W + (WORLD_W - VIEW_W) * BACKGROUND_PARALLAX;
-        let bg_h = bg_w * bg.height() / bg.width();
-        let bg_x = camera.x * (1.0 - BACKGROUND_PARALLAX);
-        let bg_y = GROUND_Y + 80.0 - bg_h + (camera.y - (GROUND_Y + CAMERA_GROUND_SHOWN - VIEW_H)) * 0.85;
-        draw_texture_ex(bg, bg_x, bg_y, WHITE, DrawTextureParams { dest_size: Some(vec2(bg_w, bg_h)), ..Default::default() });
 
         let view_rect = camera.view_rect();
         let visible = |r: Rect| r.overlaps(&Rect::new(view_rect.x - 120.0, view_rect.y - 120.0, view_rect.w + 240.0, view_rect.h + 240.0));
-        // Leaves behind the wood, the wood, then trunks over the limbs' roots, then leaves in front
+        // Leaves behind the wood, the wood (each limb merged with its forks), then trunks over
+        // the limbs' roots (with the wood brought back out over their edges), then leaves in front
         for limb in self.limbs.iter().filter(|l| visible(l.bounds())) {
             limb.draw_back(assets, self.time, self.breeze);
         }
-        for limb in self.limbs.iter().filter(|l| visible(l.bounds())) {
-            limb.draw();
-        }
+        limb::draw_wood(&self.limbs, |l| visible(l.bounds()), &self.grain);
         for tree in &self.trees {
             tree.draw(assets, &self.bark, view_rect);
         }
+        limb::draw_roots(&self.limbs, |l| visible(l.bounds()), &self.grain);
         for limb in self.limbs.iter().filter(|l| visible(l.bounds())) {
             limb.draw_front(assets, self.time, self.breeze);
         }

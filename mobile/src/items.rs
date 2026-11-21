@@ -40,12 +40,13 @@ impl Item {
             return;
         }
         let Some(pos) = self.position(limbs, time) else { return };
-        let (prefix, frames) = match self.kind {
-            ItemKind::Fish => ("fish", 3),
-            ItemKind::Gold => ("gold", 3),
-            ItemKind::Heart => ("heart", 3),
+        // The fish row's first frame came out beige, so fish twinkle between the two silver ones
+        let frames: &[&str] = match self.kind {
+            ItemKind::Fish => &["fish_1", "fish_2"],
+            ItemKind::Gold => &["gold_0", "gold_1", "gold_2"],
+            ItemKind::Heart => &["heart_0", "heart_1", "heart_2"],
         };
-        let frame = ((time * 4.0 + self.bob_phase) as usize) % frames;
-        assets.items.draw(&format!("{prefix}_{frame}"), pos, 1.0, WHITE);
+        let frame = ((time * 4.0 + self.bob_phase) as usize) % frames.len();
+        assets.items.draw(frames[frame], pos, 1.0, WHITE);
     }
 }

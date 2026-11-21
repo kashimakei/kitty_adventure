@@ -19,6 +19,7 @@ pub mod items;
 pub mod kitty;
 pub mod level;
 pub mod limb;
+pub mod parallax;
 pub mod platform;
 pub mod rng;
 pub mod save;
@@ -173,12 +174,13 @@ impl EventHandler for Lifecycle {
 }
 
 impl Lifecycle {
-    /// Whether the app was away since the last frame. A long gap between frames counts too, for
-    /// platforms that just stop drawing while hidden.
+    /// Whether the app was away since the last frame. A gap of a second or more between frames
+    /// counts too, for platforms that just stop drawing while hidden (a browser tab); ordinary
+    /// hitches are much shorter, so they don't pause the game.
     fn was_away(&mut self) -> bool {
         let subscriber = self.subscriber;
         repeat_all_miniquad_input(self, subscriber);
-        std::mem::take(&mut self.minimized) || get_frame_time() > 0.25
+        std::mem::take(&mut self.minimized) || get_frame_time() >= 1.0
     }
 }
 
