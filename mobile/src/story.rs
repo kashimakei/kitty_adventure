@@ -65,19 +65,25 @@ impl Friend {
         }
     }
 
-    /// How many usable cheer frames its sheet row has (see `cheer_frame`).
-    pub fn cheer_frames(self) -> usize {
-        if self == Friend::Pip { 4 } else { 3 }
+    /// The cheer frames that read as happy, in order. Pip's row opens with a worried-looking
+    /// leap and Hazel's has a stray scrap of leaf sliced out as frame 1, so those are left out.
+    fn cheer_cycle(self) -> &'static [usize] {
+        match self {
+            Friend::Pip => &[1, 2, 3],
+            Friend::Hazel => &[0, 2, 3],
+            _ => &[0, 1, 2],
+        }
     }
 
-    /// The name of cheer frame `i`, wrapping around. Hazel's row has a stray scrap of leaf
-    /// sliced out as frame 1, so her cheer skips it.
+    /// How many cheer frames it cycles through (see `cheer_frame`).
+    pub fn cheer_frames(self) -> usize {
+        self.cheer_cycle().len()
+    }
+
+    /// The name of cheer frame `i`, wrapping around.
     pub fn cheer_frame(self, i: usize) -> String {
-        let n = match self {
-            Friend::Hazel => [0, 2, 3][i % 3],
-            _ => i % self.cheer_frames(),
-        };
-        format!("{}_cheer_{n}", self.sprite())
+        let cycle = self.cheer_cycle();
+        format!("{}_cheer_{}", self.sprite(), cycle[i % cycle.len()])
     }
 
     pub fn help_frame(self) -> String {
@@ -175,8 +181,9 @@ pub fn level_info(level: usize) -> LevelInfo {
 }
 
 pub enum PageArt {
-    /// The friends tumbling through the treetops on the wind.
-    Storm,
+    /// The friends tumbling through the treetops on the wind: frightened the first time, giggling
+    /// when the wind comes back at the end.
+    Storm { scared: bool },
     /// Everyone stuck up in the trees, calling for help.
     AllFriends,
     /// Kitty at the foot of the trees, ready to climb.
@@ -209,7 +216,7 @@ pub fn intro_pages() -> Vec<Page> {
         ("A Windy Night",
          "One blustery night, a great big wind went whooshing through Whisker Wood. It tickled the trees and \
           rattled the leaves... and it swept Kitty's five best friends right up into the treetops!",
-         PageArt::Storm),
+         PageArt::Storm { scared: true }),
         ("Stuck Up High",
          "In the morning, five little voices called down from the tallest trees. Pip, Hazel, Mochi, Sunny and \
           Luna were stuck, and much too small to climb down by themselves.",
@@ -234,7 +241,7 @@ pub fn ending_pages() -> Vec<Page> {
         ("Here Comes the Wind!",
          "But listen... the wind is whistling through the branches again, wilder than ever! Whoosh, off go \
           the friends, giggling into the treetops. The forest is trickier now. Ready, Kitty?",
-         PageArt::Storm),
+         PageArt::Storm { scared: false }),
     ])
 }
 
@@ -327,7 +334,7 @@ fn title_scene(assets: &Assets, t: f32, time: f32) {
 pub fn draw_page(assets: &Assets, page: &Page, time: f32) {
     let t = ambient_time();
     let mood = match page.art {
-        PageArt::Storm => Mood::Night,
+        PageArt::Storm { .. } => Mood::Night,
         PageArt::Party => Mood::Party,
         _ => Mood::Day,
     };
@@ -386,7 +393,7 @@ fn page_art(assets: &Assets, art: &PageArt, r: Rect, t: f32, time: f32, alpha: f
     let ground = r.bottom() - 46.0;
     let white = fade(WHITE, alpha);
     match art {
-        PageArt::Storm => {
+        PageArt::Storm { scared } => {
             // A moon, gusts, leaves and five friends tumbling across on the wind
             draw_circle(r.right() - 100.0, r.y + 100.0, 60.0, fade(rgb(0.30, 0.34, 0.60), alpha * 0.5));
             draw_circle(r.right() - 100.0, r.y + 100.0, 42.0, fade(rgb(1.0, 0.96, 0.80), alpha));
@@ -413,7 +420,13 @@ fn page_art(assets: &Assets, art: &PageArt, r: Rect, t: f32, time: f32, alpha: f
                 let x = r.x + ((t * speed + i as f32 * 120.0) % (r.w + 160.0)) - 80.0;
                 let y = r.y + 150.0 + i as f32 * 52.0 + (t * 2.2 + i as f32).sin() * 26.0;
                 let spin = (t * 1.6 + i as f32 * 2.0).sin() * 0.6;
-                assets.friends.draw_ex(&friend.cheer_frame(1), vec2(x, y), 1.0, 0.75, spin, white);
+                // Frightened, they flail as they tumble (their worried calling-for-help pose)
+                let (frame, spin) = if *scared {
+                    (friend.help_frame(), spin * 1.4 + (t * 9.0 + i as f32).sin() * 0.08)
+                } else {
+                    (friend.cheer_frame(1), spin)
+                };
+                assets.friends.draw_ex(&frame, vec2(x, y), 1.0, 0.75, spin, white);
             }
             leaves_in(assets, r, t, 16, 2.6, alpha);
         }

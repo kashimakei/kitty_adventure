@@ -21,6 +21,9 @@ const MIN_SCAMPER: f32 = 25.0;
 const KEEP_AWAY: f32 = 90.0;
 /// It throws when Kitty is this close (px across, px up or down) and both are on screen.
 const THROW_RANGE: Vec2 = Vec2::new(330.0, 300.0);
+/// It only throws down or across: once Kitty's feet are more than this far above its own, she's
+/// climbed past it and it leaves her be.
+const ABOVE: f32 = 24.0;
 /// Seconds between throws on the first level; the level's pace shortens them.
 const THROW_COOLDOWN: (f32, f32) = (2.6, 3.8);
 /// A grace period when the level starts, so squirrels don't all throw at once.
@@ -98,10 +101,15 @@ impl Squirrel {
         ctx.kitty.standing_on == Some(Support::Limb(self.limb))
     }
 
+    fn kitty_above(&self, ctx: &EnemyCtx) -> bool {
+        ctx.kitty.y < self.pos.y - ABOVE
+    }
+
     fn wants_to_throw(&self, ctx: &EnemyCtx) -> bool {
         let kitty = ctx.kitty.body.center();
         let d = kitty - self.pos;
         self.cooldown <= 0.0
+            && !self.kitty_above(ctx)
             && d.x.abs() < THROW_RANGE.x
             && d.y.abs() < THROW_RANGE.y
             && ctx.view.contains(kitty)
@@ -224,6 +232,8 @@ impl Enemy for Squirrel {
                     self.facing = dir;
                 }
             }
+            // Kitty climbed above it during the wind-up: it gives up rather than lob upward
+            State::Throw { thrown: false, .. } if self.kitty_above(ctx) => self.idle(ctx),
             State::Throw { timer, mut thrown } => {
                 let timer = timer + STEP;
                 if !thrown && timer >= RELEASE_FRAME as f32 / THROW.fps {
