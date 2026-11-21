@@ -7,6 +7,9 @@ edition = "2021"
 name = "branch_engine"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["python"]
+python = ["dep:pyo3", "pyo3/extension-module", "pyo3/multiple-pymethods"]
+
 [dependencies]
-macroquad = { version = "0.4", features = ["audio"] }
-pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3 = { version = "0.21", optional = true }

@@ -1,25 +1,19 @@
 use crate::math::Vec2;
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 use std::f32::consts::PI;
 
-#[pyclass]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 #[derive(Clone, Copy, Debug)]
 pub struct Node {
-    #[pyo3(get, set)]
     pub pos: Vec2,
-    #[pyo3(get, set)]
     pub old_pos: Vec2,
-    #[pyo3(get, set)]
     pub acc: Vec2,
-    #[pyo3(get, set)]
     pub radius: f32,
-    #[pyo3(get, set)]
     pub pinned: bool,
 }
 
-#[pymethods]
 impl Node {
-    #[new]
     pub fn new(pos: Vec2, radius: f32, pinned: bool) -> Self {
         Self {
             pos,
@@ -30,6 +24,10 @@ impl Node {
         }
     }
 
+}
+
+#[cfg_attr(feature = "python", pymethods)]
+impl Node {
     pub fn update(&mut self, dt: f32, friction: f32) {
         if self.pinned { return; }
         let vel = self.pos.sub_val(self.old_pos).mul_val(friction);
@@ -39,22 +37,16 @@ impl Node {
     }
 }
 
-#[pyclass]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 #[derive(Clone, Copy, Debug)]
 pub struct Constraint {
-    #[pyo3(get, set)]
     pub node_a: usize,
-    #[pyo3(get, set)]
     pub node_b: usize,
-    #[pyo3(get, set)]
     pub target_length: f32,
-    #[pyo3(get, set)]
     pub stiffness: f32,
 }
 
-#[pymethods]
 impl Constraint {
-    #[new]
     pub fn new(node_a: usize, node_b: usize, target_length: f32, stiffness: f32) -> Self {
         Self { node_a, node_b, target_length, stiffness }
     }
@@ -66,32 +58,23 @@ const REFERENCE_LENGTH: f32 = 220.0;
 /// Seconds of sustained overload before a branch snaps, so a hard landing alone won't break it.
 const BREAK_RESPONSE: f32 = 0.3;
 
-#[pyclass]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 pub struct Branch {
-    #[pyo3(get, set)]
     pub nodes: Vec<Node>,
-    #[pyo3(get, set)]
     pub constraints: Vec<Constraint>,
     /// Number of segments; top contour is nodes[0..=segments], bottom contour follows.
-    #[pyo3(get)]
     pub segments: usize,
     /// +1.0 grows to the right of `start`, -1.0 grows to the left.
-    #[pyo3(get)]
     pub direction: f32,
-    #[pyo3(get)]
     pub segment_len: f32,
     /// Total sustained load (sum of `apply_load` forces) the branch holds before snapping.
     /// 0 means unbreakable.
-    #[pyo3(get, set)]
     pub strength: f32,
     /// Distance from the base where the branch snaps off.
-    #[pyo3(get, set)]
     pub snap_distance: f32,
     /// Smoothed total load the branch is carrying right now; compare with `strength`.
-    #[pyo3(get)]
     pub stress: f32,
     /// Segment that has snapped, if any. Everything past it has fallen free.
-    #[pyo3(get)]
     pub broken_at: Option<usize>,
     /// External forces (loads, wind) accumulated between physics ticks.
     /// Applied on every sub-step of the next `update_physics`, then cleared.
@@ -100,10 +83,7 @@ pub struct Branch {
     load_total: f32,
 }
 
-#[pymethods]
 impl Branch {
-    #[new]
-    #[pyo3(signature = (start, length, base_depth, segments, stiffness, gnarl=1.0, direction=1.0, seed=0))]
     pub fn new_tree_branch(start: Vec2, length: f32, base_depth: f32, segments: usize, stiffness: f32, gnarl: f32, direction: f32, seed: u64) -> Self {
         let direction = if direction < 0.0 { -1.0 } else { 1.0 };
         let segments = segments.max(2);
@@ -183,6 +163,10 @@ impl Branch {
         }
     }
 
+}
+
+#[cfg_attr(feature = "python", pymethods)]
+impl Branch {
     pub fn update_constraints(&mut self, iterations: usize) {
         for _ in 0..iterations {
             for c in &self.constraints {
@@ -390,5 +374,35 @@ impl Rng {
         self.0 ^= self.0 >> 7;
         self.0 ^= self.0 << 17;
         (self.0 >> 40) as f32 / (1u64 << 24) as f32
+    }
+}
+
+/// Python constructors live apart so the types build without PyO3 (the `python` feature).
+#[cfg(feature = "python")]
+#[pymethods]
+impl Node {
+    #[new]
+    fn py_new(pos: Vec2, radius: f32, pinned: bool) -> Self {
+        Self::new(pos, radius, pinned)
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Constraint {
+    #[new]
+    fn py_new(node_a: usize, node_b: usize, target_length: f32, stiffness: f32) -> Self {
+        Self::new(node_a, node_b, target_length, stiffness)
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Branch {
+    #[new]
+    #[pyo3(signature = (start, length, base_depth, segments, stiffness, gnarl=1.0, direction=1.0, seed=0))]
+    fn py_new(start: Vec2, length: f32, base_depth: f32, segments: usize, stiffness: f32,
+              gnarl: f32, direction: f32, seed: u64) -> Self {
+        Self::new_tree_branch(start, length, base_depth, segments, stiffness, gnarl, direction, seed)
     }
 }

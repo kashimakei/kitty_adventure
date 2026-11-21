@@ -62,7 +62,7 @@ mixer.music.play(-1)  # Loop music
 
 # Game State Variables
 max_levels = 10
-current_level = 9
+current_level = 1
 current_difficulty = 2
 level_complete = False
 lives = 3

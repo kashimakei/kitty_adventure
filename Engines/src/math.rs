@@ -1,26 +1,15 @@
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-#[pyclass]
+#[cfg_attr(feature = "python", pyclass(get_all, set_all))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vec2 {
-    #[pyo3(get, set)]
     pub x: f32,
-    #[pyo3(get, set)]
     pub y: f32,
 }
 
-#[pymethods]
+#[cfg_attr(feature = "python", pymethods)]
 impl Vec2 {
-    #[new]
-    pub fn new(x: f32, y: f32) -> Self {
-        Self { x, y }
-    }
-
-    #[staticmethod]
-    pub fn zero() -> Self {
-        Self::new(0.0, 0.0)
-    }
-
     // Mathematical operations exposed to Python
     pub fn add(&self, other: &Vec2) -> Self {
         Self::new(self.x + other.x, self.y + other.y)
@@ -58,6 +47,14 @@ impl Vec2 {
 
 // Inner Rust versions for ergonomic matching with older code
 impl Vec2 {
+    pub fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+
+    pub fn zero() -> Self {
+        Self::new(0.0, 0.0)
+    }
+
     pub fn add_val(self, other: Self) -> Self {
         Self::new(self.x + other.x, self.y + other.y)
     }
@@ -83,5 +80,21 @@ impl Vec2 {
         } else {
             Self::zero()
         }
+    }
+}
+
+/// Python constructors live apart so the type builds without PyO3 (the `python` feature).
+#[cfg(feature = "python")]
+#[pymethods]
+impl Vec2 {
+    #[new]
+    fn py_new(x: f32, y: f32) -> Self {
+        Self::new(x, y)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "zero")]
+    fn py_zero() -> Self {
+        Self::zero()
     }
 }
