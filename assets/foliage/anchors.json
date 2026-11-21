@@ -1,0 +1,126 @@
+{
+  "scale": 0.19377162629757785,
+  "animations": {
+    "green": [
+      "green_0.png",
+      "green_1.png",
+      "green_2.png",
+      "green_3.png",
+      "green_4.png",
+      "green_5.png"
+    ],
+    "autumn": [
+      "autumn_0.png",
+      "autumn_1.png",
+      "autumn_2.png",
+      "autumn_3.png",
+      "autumn_4.png",
+      "autumn_5.png"
+    ],
+    "twig": [
+      "twig_0.png",
+      "twig_1.png",
+      "twig_2.png",
+      "twig_3.png"
+    ],
+    "falling": [
+      "falling_0.png",
+      "falling_1.png",
+      "falling_2.png",
+      "falling_3.png",
+      "falling_4.png",
+      "falling_5.png"
+    ]
+  },
+  "anchors": {
+    "green_0.png": [
+      12,
+      12
+    ],
+    "green_1.png": [
+      19,
+      15
+    ],
+    "green_2.png": [
+      24,
+      18
+    ],
+    "green_3.png": [
+      29,
+      22
+    ],
+    "green_4.png": [
+      34,
+      20
+    ],
+    "green_5.png": [
+      35,
+      28
+    ],
+    "autumn_0.png": [
+      12,
+      12
+    ],
+    "autumn_1.png": [
+      19,
+      15
+    ],
+    "autumn_2.png": [
+      24,
+      19
+    ],
+    "autumn_3.png": [
+      29,
+      22
+    ],
+    "autumn_4.png": [
+      34,
+      20
+    ],
+    "autumn_5.png": [
+      35,
+      28
+    ],
+    "twig_0.png": [
+      0,
+      34
+    ],
+    "twig_1.png": [
+      0,
+      47
+    ],
+    "twig_2.png": [
+      0,
+      41
+    ],
+    "twig_3.png": [
+      0,
+      53
+    ],
+    "falling_0.png": [
+      8,
+      8
+    ],
+    "falling_1.png": [
+      8,
+      8
+    ],
+    "falling_2.png": [
+      8,
+      9
+    ],
+    "falling_3.png": [
+      9,
+      8
+    ],
+    "falling_4.png": [
+      9,
+      7
+    ],
+    "falling_5.png": [
+      7,
+      6
+    ]
+  },
+  "hits": {}
+}

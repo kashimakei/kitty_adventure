@@ -84,7 +84,9 @@ pub struct Branch {
 }
 
 impl Branch {
-    pub fn new_tree_branch(start: Vec2, length: f32, base_depth: f32, segments: usize, stiffness: f32, gnarl: f32, direction: f32, seed: u64) -> Self {
+    /// `rise` angles the whole branch: the tip ends `rise * length` lower (negative = upward), on
+    /// top of the small random tilt. Forks growing off another branch use it to reach upward.
+    pub fn new_tree_branch(start: Vec2, length: f32, base_depth: f32, segments: usize, stiffness: f32, gnarl: f32, direction: f32, seed: u64, rise: f32) -> Self {
         let direction = if direction < 0.0 { -1.0 } else { 1.0 };
         let segments = segments.max(2);
         let segment_len = length / segments as f32;
@@ -104,7 +106,7 @@ impl Branch {
                 (t * PI * 1.5 * gnarl.min(1.0)).sin() * 30.0
                 + (t * 2.0 * PI * wiggle_cycles + phase).sin() * 10.0 * t
                 + t * t * 40.0
-            ) + tilt * length * t;
+            ) + (tilt + rise) * length * t;
             Vec2::new(start.x + direction * i as f32 * segment_len, start.y + bend)
         }).collect();
 
@@ -289,6 +291,17 @@ impl Branch {
         }
     }
 
+    /// Move only the pinned base nodes, without adding velocity. A fork growing off another
+    /// branch calls this each tick so its base rides along as the parent bends; the rest of the
+    /// fork follows through its springs.
+    pub fn move_pinned(&mut self, dx: f32, dy: f32) {
+        let d = Vec2::new(dx, dy);
+        for node in self.nodes.iter_mut().filter(|n| n.pinned) {
+            node.pos = node.pos.add_val(d);
+            node.old_pos = node.old_pos.add_val(d);
+        }
+    }
+
     /// Move the whole branch rigidly without adding velocity (camera scrolling).
     pub fn translate(&mut self, dx: f32, dy: f32) {
         let d = Vec2::new(dx, dy);
@@ -400,9 +413,9 @@ impl Constraint {
 #[pymethods]
 impl Branch {
     #[new]
-    #[pyo3(signature = (start, length, base_depth, segments, stiffness, gnarl=1.0, direction=1.0, seed=0))]
+    #[pyo3(signature = (start, length, base_depth, segments, stiffness, gnarl=1.0, direction=1.0, seed=0, rise=0.0))]
     fn py_new(start: Vec2, length: f32, base_depth: f32, segments: usize, stiffness: f32,
-              gnarl: f32, direction: f32, seed: u64) -> Self {
-        Self::new_tree_branch(start, length, base_depth, segments, stiffness, gnarl, direction, seed)
+              gnarl: f32, direction: f32, seed: u64, rise: f32) -> Self {
+        Self::new_tree_branch(start, length, base_depth, segments, stiffness, gnarl, direction, seed, rise)
     }
 }

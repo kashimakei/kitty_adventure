@@ -1,0 +1,113 @@
+{
+  "scale": 0.20350877192982456,
+  "animations": {
+    "run": [
+      "run_0.png",
+      "run_1.png",
+      "run_2.png",
+      "run_3.png",
+      "run_4.png"
+    ],
+    "throw": [
+      "throw_0.png",
+      "throw_1.png",
+      "throw_2.png",
+      "throw_3.png",
+      "throw_4.png"
+    ],
+    "idle": [
+      "idle_0.png",
+      "idle_1.png",
+      "idle_2.png",
+      "idle_3.png"
+    ],
+    "hurt": [
+      "hurt_0.png",
+      "hurt_1.png"
+    ]
+  },
+  "anchors": {
+    "run_0.png": [
+      55,
+      57
+    ],
+    "run_1.png": [
+      69,
+      61
+    ],
+    "run_2.png": [
+      65,
+      72
+    ],
+    "run_3.png": [
+      64,
+      66
+    ],
+    "run_4.png": [
+      62,
+      61
+    ],
+    "throw_0.png": [
+      55,
+      60
+    ],
+    "throw_1.png": [
+      41,
+      63
+    ],
+    "throw_2.png": [
+      39,
+      69
+    ],
+    "throw_3.png": [
+      52,
+      65
+    ],
+    "throw_4.png": [
+      55,
+      67
+    ],
+    "idle_0.png": [
+      38,
+      65
+    ],
+    "idle_1.png": [
+      37,
+      64
+    ],
+    "idle_2.png": [
+      40,
+      65
+    ],
+    "idle_3.png": [
+      42,
+      65
+    ],
+    "hurt_0.png": [
+      60,
+      60
+    ],
+    "hurt_1.png": [
+      60,
+      60
+    ]
+  },
+  "hits": {
+    "run_0.png": "run_0_hit.png",
+    "run_1.png": "run_1_hit.png",
+    "run_2.png": "run_2_hit.png",
+    "run_3.png": "run_3_hit.png",
+    "run_4.png": "run_4_hit.png",
+    "throw_0.png": "throw_0_hit.png",
+    "throw_1.png": "throw_1_hit.png",
+    "throw_2.png": "throw_2_hit.png",
+    "throw_3.png": "throw_3_hit.png",
+    "throw_4.png": "throw_4_hit.png",
+    "idle_0.png": "idle_0_hit.png",
+    "idle_1.png": "idle_1_hit.png",
+    "idle_2.png": "idle_2_hit.png",
+    "idle_3.png": "idle_3_hit.png",
+    "hurt_0.png": "hurt_0_hit.png",
+    "hurt_1.png": "hurt_1_hit.png"
+  }
+}

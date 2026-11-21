@@ -1,0 +1,113 @@
+{
+  "scale": 0.1984126984126984,
+  "animations": {
+    "slither": [
+      "slither_0.png",
+      "slither_1.png",
+      "slither_2.png",
+      "slither_3.png",
+      "slither_4.png"
+    ],
+    "coiled": [
+      "coiled_0.png",
+      "coiled_1.png",
+      "coiled_2.png",
+      "coiled_3.png"
+    ],
+    "strike": [
+      "strike_0.png",
+      "strike_1.png",
+      "strike_2.png",
+      "strike_3.png",
+      "strike_4.png"
+    ],
+    "hurt": [
+      "hurt_0.png",
+      "hurt_1.png"
+    ]
+  },
+  "anchors": {
+    "slither_0.png": [
+      45,
+      49
+    ],
+    "slither_1.png": [
+      38,
+      49
+    ],
+    "slither_2.png": [
+      47,
+      47
+    ],
+    "slither_3.png": [
+      60,
+      48
+    ],
+    "slither_4.png": [
+      45,
+      49
+    ],
+    "coiled_0.png": [
+      34,
+      41
+    ],
+    "coiled_1.png": [
+      31,
+      61
+    ],
+    "coiled_2.png": [
+      34,
+      55
+    ],
+    "coiled_3.png": [
+      35,
+      53
+    ],
+    "strike_0.png": [
+      30,
+      54
+    ],
+    "strike_1.png": [
+      34,
+      66
+    ],
+    "strike_2.png": [
+      51,
+      51
+    ],
+    "strike_3.png": [
+      46,
+      44
+    ],
+    "strike_4.png": [
+      40,
+      54
+    ],
+    "hurt_0.png": [
+      43,
+      59
+    ],
+    "hurt_1.png": [
+      41,
+      53
+    ]
+  },
+  "hits": {
+    "slither_0.png": "slither_0_hit.png",
+    "slither_1.png": "slither_1_hit.png",
+    "slither_2.png": "slither_2_hit.png",
+    "slither_3.png": "slither_3_hit.png",
+    "slither_4.png": "slither_4_hit.png",
+    "coiled_0.png": "coiled_0_hit.png",
+    "coiled_1.png": "coiled_1_hit.png",
+    "coiled_2.png": "coiled_2_hit.png",
+    "coiled_3.png": "coiled_3_hit.png",
+    "strike_0.png": "strike_0_hit.png",
+    "strike_1.png": "strike_1_hit.png",
+    "strike_2.png": "strike_2_hit.png",
+    "strike_3.png": "strike_3_hit.png",
+    "strike_4.png": "strike_4_hit.png",
+    "hurt_0.png": "hurt_0_hit.png",
+    "hurt_1.png": "hurt_1_hit.png"
+  }
+}

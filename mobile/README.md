@@ -1,94 +1,109 @@
-# macroquad spike
+# Kitty Adventure for Android, web and desktop
 
-A small Rust/macroquad build of Kitty Adventure, to find out what a port that runs on
-desktop, web, Android and iOS from one codebase would take before committing to it.
+Kitty Adventure: The Treetop Rescue, in Rust with [macroquad](https://macroquad.rs). A storm has
+scattered Kitty's five friends to the tops of the tallest trees; each level is a stretch of forest
+three screens wide where she climbs bendy branches, dodges squirrels, snakes, crows, dogs and
+eagles, and reaches the friend waiting in a nest at the top. After the five story levels come
+harder laps.
 
-It has one level's worth of the hard parts: two trees with bendy branches from the same
-`Engines/` physics the pygame game uses, Kitty with walk/sit/jump/fall/land animations from
-`assets/kitty/`, touch buttons alongside the keyboard, a fixed 60 Hz physics step, and the
-600×1200 playfield scaled to fit any screen.
+The same code runs on desktop, in the browser (wasm) and on Android. The branches use the same
+physics as the pygame original in the repository root (`Engines/`, built here without its Python
+bindings), and the art and sounds come from `../assets`.
 
-## Running it
+Controls: arrows or A/D to walk, Space/Up/W to jump (hold for higher), Down/S to let go of a
+branch, Esc/P to pause; on a phone, the on-screen buttons.
 
-```bash
-./build.sh desktop        # opens a window
-./build.sh web            # builds dist/; serve with: python3 -m http.server -d dist 8000
-cargo test --release      # Kitty lands on a branch, bends it, and it springs back
-```
-
-`build.sh` stages the frames from `../assets/kitty/` into `assets/` (git-ignored) first. The
-web build needs `rustup target add wasm32-unknown-unknown` once.
-
-Controls: arrows/A/D to walk and Space/Up to jump, or the on-screen buttons.
-
-## What the spike showed
-
-**Works**
-- `Engines/` builds without Python: the PyO3 bindings are now behind a `python` feature (on by
-  default, so `maturin develop` and the pygame game are unchanged). The macroquad build uses
-  the same `Branch` code directly.
-- The sprite pipeline carries over as-is: the PNG frames and `anchors.json` from
-  `tools/slice_sprites.py` load straight into Rust.
-- Web: an 857 KB wasm file (300 KB gzipped). It ran at 60 fps in the browser, with scaling,
-  touch/mouse buttons, jumping, landing and walking all working.
-- The native desktop build compiles cleanly; the physics test passes.
-
-**Problems found and fixed**
-- With a fixed timestep, a tap on a frame that ran no physics step was dropped (common at
-  60 Hz, where frame times hover just under 1/60 s). Taps are now queued for the next step.
-- Quick taps could fall between frames; jumping now uses tap events instead of polling.
-- A 330 px branch sagged 73 px under Kitty and curled back past its own tip. The spike uses
-  the game's 170–220 px branch sizes; branch bend grows with the cube of its length.
-
-**To do in a real port**
-- Loading: 40 separate frame images plus a 3.4 MB background PNG take a few seconds on the
-  web. Pack frames into one atlas, ship a smaller background, and show a loading screen.
-- `sample_count: 4` logs WebGL warnings in the browser; use no multisampling on web.
-
-## Android
+## Building
 
 ```bash
-./build.sh android    # -> target/android-artifacts/release/apk/kitty_mobile.apk
-~/Android/Sdk/platform-tools/adb install -r target/android-artifacts/release/apk/kitty_mobile.apk
+./build.sh desktop    # run it in a window
+./build.sh web        # build dist/; serve it with: python3 -m http.server -d dist 8000
+./build.sh android    # build a debug APK: android/app/build/outputs/apk/debug/kitty-adventure-debug.apk
+./build.sh install    # build it, install it on the phone connected over adb and start it
+./build.sh assets     # just stage the art and sounds
+cargo test --release  # checks that generated levels are climbable
 ```
 
-This builds a 4.8 MB APK for Android 8.0+ on 64- and 32-bit ARM phones, signed with a debug key.
+Every target first stages the art and sounds the game uses from `../assets` into `assets/`
+(git-ignored), which the desktop build reads from the working directory, the web build copies
+into `dist/`, and the Android build packages at the APK's asset root.
 
-**Tested on a Pixel 9 Pro (Android 17):** it runs at the screen's 120 Hz. Touch input, jumping
-onto and walking along branches, and scaling to the phone's taller-than-1:2 screen all work.
-Physics steps at a fixed 60 Hz, so on 120 Hz screens every physics state is drawn twice; a real
-port should blend between steps for the smoothest motion.
-One-time setup (the `sdkmanager` step asks you to accept Google's SDK licence):
+`ABIS=arm64-v8a ./build.sh android` builds for 64-bit ARM phones only, which is quicker. By default
+the APK also has `armeabi-v7a` (older 32-bit phones) and `x86_64` (the emulator).
 
-```bash
-sudo apt install openjdk-17-jdk-headless
-# Android command-line tools unpacked to ~/Android/Sdk/cmdline-tools/latest, then:
-~/Android/Sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3" "ndk;25.2.9519653"
-cargo install cargo-quad-apk
-rustup target add aarch64-linux-android armv7-linux-androideabi
+## Prerequisites
+
+- Rust via [rustup](https://rustup.rs). For the web build: `rustup target add wasm32-unknown-unknown`.
+- For Android:
+  - JDK 17.
+  - The Android SDK in `~/Android/Sdk` (or set `ANDROID_HOME`) with `platforms;android-35`,
+    `build-tools;35.0.0`, `platform-tools` and `ndk;25.2.9519653`. With the command-line tools:
+    `sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" "ndk;25.2.9519653"`
+    (it asks you to accept Google's SDK licence).
+  - `cargo install cargo-ndk` and
+    `rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android`.
+
+  You don't need Gradle itself: `android/gradlew` fetches Gradle 8.11.1 and the Android Gradle
+  plugin on the first build.
+
+## Installing on a phone
+
+1. On the phone, turn on Developer options (tap Settings > About phone > Build number seven
+   times), then USB debugging in Settings > System > Developer options.
+2. Connect it by USB and accept the debugging prompt on the phone.
+3. Run `./build.sh install`.
+
+Without adb, copy the APK to the phone and open it there (allow installing unknown apps when
+asked).
+
+The APK is signed with a debug key that the first build makes in
+`~/.android/kitty-adventure-debug.keystore`, so builds from any checkout install over each other.
+Keep that file: an APK signed with a different key won't install over the app until you uninstall
+it. The earlier spike (`com.kashimakei.kitty_mobile`) is a separate app; remove it with
+`adb uninstall com.kashimakei.kitty_mobile`.
+
+## How the Android app is built
+
+`android/` is a plain Gradle project (Android Gradle plugin 8.7) for Android 8.0+ (API 26),
+targeting API 35. You can open it in Android Studio after running `./build.sh assets` once.
+
+- **The game** is this crate's `cdylib`, `libkitty_mobile.so`. The `cargoNdkDebug` task in
+  `android/app/build.gradle.kts` builds it in release mode with cargo-ndk for each ABI (the
+  `rustAbis` Gradle property, from `ABIS` in `build.sh`) into `app/build/generated/jniLibs`. It
+  links with 16 KB page alignment, which phones with 16 KB memory pages (Android 15+) need.
+- **The Java glue** is miniquad's own: `MainActivity` (package `com.kashimakei.kittyadventure`) is
+  miniquad 0.4.11's `java/MainActivity.java` template filled in the way `cargo-quad-apk` does,
+  plus immersive fullscreen and camera-cutout handling. `QuadNative` must stay in package
+  `quad_native`, since the Rust side exports `Java_quad_1native_QuadNative_*`. When updating
+  miniquad, diff its `java/` folder against these two files.
+- **The assets** come straight from `mobile/assets`.
+- **The launcher icons** are made from `../assets/kitty.png` by `android/make_icons.py` (needs
+  Pillow); the PNGs are committed.
+
+## Layout
+
+```
+mobile/
+  build.sh          build and run targets (above)
+  Cargo.toml        the kitty_mobile crate: a library (for Android) and the `kitty` binary
+  src/
+    lib.rs          screens (title, story, levels, pause, game over) and the fixed 60 Hz loop
+    world.rs        one level: trees, Kitty, enemies, items, collisions, drawing
+    level.rs        level generation and difficulty per level and lap
+    kitty.rs        Kitty's movement and animation
+    limb.rs tree.rs branches (wrapping the Engines/ physics) and trunks
+    enemies/        squirrel, snake, crow, dog, eagle
+    camera.rs       the 600x1200 playfield letterboxed to any screen, and the camera
+    sprites.rs      sprite frames, anchors and pixel-accurate hit masks from assets/
+    input.rs hud.rs story.rs audio.rs save.rs items.rs effects.rs rng.rs consts.rs
+  web/              index.html and macroquad's JS loader for the web build
+  android/          the Gradle project
+    app/build.gradle.kts            app settings and the cargo-ndk build
+    app/src/main/AndroidManifest.xml
+    app/src/main/java/              MainActivity and QuadNative (miniquad's Java glue)
+    app/src/main/res/               launcher icons, app name, theme
+    make_icons.py                   regenerates the launcher icons
 ```
 
-**What it took:** macroquad's packager, `cargo-quad-apk` 0.1.4, is old. It needs build-tools
-30.0.3 (the last with `dx`), a v3 `Cargo.lock` (its bundled Cargo can't read v4), and the
-shims in `setup_android.sh` to work with NDK r25 (which current Rust requires) and a current JDK.
-`build.sh android` runs that script for you. It also names the native library it loads after
-the last part of the app ID, so the ID has to end in `kitty_mobile`.
-
-**Before a Play Store release:** this pipeline targets API 30 and produces APKs. Google Play
-now wants a recent target API and App Bundles (AAB), which `cargo-quad-apk` can't make. A
-real release would build the same Rust library and wrap it in a small Gradle project instead.
-That's a known pattern, but it's extra setup to budget for.
-
-## iOS
-
-Not planned for now: Android comes first. macroquad supports iOS, but building it needs a Mac
-with Xcode (or a cloud Mac) and an Apple developer account.
-
-## Size of a full port
-
-The pygame game is about 2,000 lines of Python (not counting the physics sandbox). This
-spike's ~470 lines of Rust cover the frame loop, input, scaling, sprites, one character's
-movement and the branch integration. Still to port: level generation and the 3-screen camera,
-Kitty's full state machine (idle fidgets, hanging, climbing), dogs, eagles, damage masks and
-the body hurtbox, breakable branches, wind, HUD and minimap, sound, splash and game-over
-screens. Expect roughly 2,500–3,000 lines of Rust in total.
+iOS isn't planned for now: macroquad supports it, but building needs a Mac with Xcode and an
+Apple developer account.

@@ -1,0 +1,223 @@
+{
+  "scale": 0.2611683848797251,
+  "animations": {
+    "pip_help": [
+      "pip_help_0.png"
+    ],
+    "pip_cheer": [
+      "pip_cheer_0.png",
+      "pip_cheer_1.png",
+      "pip_cheer_2.png",
+      "pip_cheer_3.png"
+    ],
+    "hazel_help": [
+      "hazel_help_0.png"
+    ],
+    "hazel_cheer": [
+      "hazel_cheer_0.png",
+      "hazel_cheer_1.png",
+      "hazel_cheer_2.png",
+      "hazel_cheer_3.png"
+    ],
+    "mochi_help": [
+      "mochi_help_0.png"
+    ],
+    "mochi_cheer": [
+      "mochi_cheer_0.png",
+      "mochi_cheer_1.png",
+      "mochi_cheer_2.png"
+    ],
+    "sunny_help": [
+      "sunny_help_0.png"
+    ],
+    "sunny_cheer": [
+      "sunny_cheer_0.png",
+      "sunny_cheer_1.png",
+      "sunny_cheer_2.png"
+    ],
+    "luna_help": [
+      "luna_help_0.png"
+    ],
+    "luna_cheer": [
+      "luna_cheer_0.png",
+      "luna_cheer_1.png",
+      "luna_cheer_2.png"
+    ],
+    "pip_storm": [
+      "pip_storm_0.png",
+      "pip_storm_1.png",
+      "pip_storm_2.png"
+    ],
+    "hazel_storm": [
+      "hazel_storm_0.png",
+      "hazel_storm_1.png",
+      "hazel_storm_2.png"
+    ],
+    "mochi_storm": [
+      "mochi_storm_0.png",
+      "mochi_storm_1.png",
+      "mochi_storm_2.png"
+    ],
+    "sunny_storm": [
+      "sunny_storm_0.png",
+      "sunny_storm_1.png",
+      "sunny_storm_2.png"
+    ],
+    "luna_storm": [
+      "luna_storm_0.png",
+      "luna_storm_1.png",
+      "luna_storm_2.png"
+    ]
+  },
+  "anchors": {
+    "pip_help_0.png": [
+      36,
+      75
+    ],
+    "pip_cheer_0.png": [
+      34,
+      102
+    ],
+    "pip_cheer_1.png": [
+      39,
+      106
+    ],
+    "pip_cheer_2.png": [
+      27,
+      100
+    ],
+    "pip_cheer_3.png": [
+      27,
+      101
+    ],
+    "hazel_help_0.png": [
+      33,
+      68
+    ],
+    "hazel_cheer_0.png": [
+      37,
+      72
+    ],
+    "hazel_cheer_1.png": [
+      15,
+      36
+    ],
+    "hazel_cheer_2.png": [
+      32,
+      85
+    ],
+    "hazel_cheer_3.png": [
+      31,
+      82
+    ],
+    "mochi_help_0.png": [
+      30,
+      65
+    ],
+    "mochi_cheer_0.png": [
+      38,
+      69
+    ],
+    "mochi_cheer_1.png": [
+      28,
+      76
+    ],
+    "mochi_cheer_2.png": [
+      30,
+      74
+    ],
+    "sunny_help_0.png": [
+      31,
+      67
+    ],
+    "sunny_cheer_0.png": [
+      29,
+      76
+    ],
+    "sunny_cheer_1.png": [
+      32,
+      79
+    ],
+    "sunny_cheer_2.png": [
+      31,
+      78
+    ],
+    "luna_help_0.png": [
+      42,
+      73
+    ],
+    "luna_cheer_0.png": [
+      44,
+      81
+    ],
+    "luna_cheer_1.png": [
+      40,
+      85
+    ],
+    "luna_cheer_2.png": [
+      36,
+      86
+    ],
+    "pip_storm_0.png": [
+      41,
+      79
+    ],
+    "pip_storm_1.png": [
+      49,
+      72
+    ],
+    "pip_storm_2.png": [
+      37,
+      87
+    ],
+    "hazel_storm_0.png": [
+      40,
+      66
+    ],
+    "hazel_storm_1.png": [
+      39,
+      62
+    ],
+    "hazel_storm_2.png": [
+      33,
+      74
+    ],
+    "mochi_storm_0.png": [
+      36,
+      74
+    ],
+    "mochi_storm_1.png": [
+      41,
+      59
+    ],
+    "mochi_storm_2.png": [
+      34,
+      75
+    ],
+    "sunny_storm_0.png": [
+      35,
+      65
+    ],
+    "sunny_storm_1.png": [
+      40,
+      54
+    ],
+    "sunny_storm_2.png": [
+      31,
+      76
+    ],
+    "luna_storm_0.png": [
+      43,
+      63
+    ],
+    "luna_storm_1.png": [
+      44,
+      67
+    ],
+    "luna_storm_2.png": [
+      38,
+      70
+    ]
+  },
+  "hits": {}
+}
