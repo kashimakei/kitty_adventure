@@ -524,7 +524,8 @@ impl Kitty {
         self.clip_time += dt;
     }
 
-    pub fn draw(&self, assets: &Assets) {
+    /// `offset` shifts the drawing only (World uses it to blend between physics steps).
+    pub fn draw(&self, assets: &Assets, offset: Vec2) {
         // Blink while invulnerable
         if self.invulnerable > 0 && (self.invulnerable / 5) % 2 == 1 {
             return;
@@ -537,6 +538,6 @@ impl Kitty {
             Pin::Grip => self.top(),
             Pin::Feet => self.y,
         };
-        assets.kitty.draw(name, vec2(self.x, pin_y), self.facing, WHITE);
+        assets.kitty.draw(name, vec2(self.x, pin_y) + offset, self.facing, WHITE);
     }
 }
