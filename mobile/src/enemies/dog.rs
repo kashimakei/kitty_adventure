@@ -34,7 +34,7 @@ const BARK_BEFORE_JUMP: f32 = 0.8; // seconds of barking before leaping up at Ki
 /// Barking plays a woof at most this often, so a pack under Kitty isn't a wall of noise.
 const BARK_SOUND_GAP: f32 = 1.2;
 const SCRATCH_EVERY: (f32, f32) = (5.0, 10.0);
-const EXPLORE_CHANCE: f32 = 0.15; // per second, while under a low branch, of hopping up to look
+const EXPLORE_CHANCE: f32 = 3.0; // TEMP TEST // per second, while under a low branch, of hopping up to look
 const BRANCH_STAY: (f32, f32) = (4.0, 8.0); // seconds a wandering dog stays up before hopping down
 const GROUND_INSET: f32 = 10.0; // keeps the dog this far inside the world's edges
 const AIR_POSE_SPEED: f32 = 150.0; // px/s up or down past which it shows the rising/dropping pose
@@ -140,6 +140,7 @@ impl Dog {
 
     fn set_state(&mut self, state: State) {
         if state != self.state {
+            info!("DBG dog x={:.0} y={:.0} {:?} -> {:?} support={:?}", self.x, self.y, self.state, state, self.support);
             self.state = state;
             self.state_time = 0.0;
         }
@@ -158,6 +159,9 @@ impl Dog {
         self.y = top;
         if let Support::Limb(id) = support {
             ctx.pushes.push(Push::Load { limb: id, x: self.x, weight: WEIGHT });
+            if ((self.state_time / STEP) as u32) % 20 == 0 {
+                info!("DBG dog on limb {} x={:.0} y={:.1} tip_y={:.1} strain={:.2}", id, self.x, self.y, ctx.limbs[id].tip().y, ctx.limbs[id].strain());
+            }
         }
 
         match self.state {
@@ -333,6 +337,7 @@ impl Dog {
                 self.branch_time = 0.0;
                 self.branch_stay = ctx.rng.pair(BRANCH_STAY);
                 if let Support::Limb(id) = candidate {
+                    info!("DBG dog landed limb {} x={:.0} y={:.1} tip_y={:.1}", id, self.x, top, ctx.limbs[id].tip().y);
                     ctx.pushes.push(Push::Kick { limb: id, x: self.x, speed: LAND_KICK });
                 }
                 self.set_state(if self.crashed { State::Crash } else { State::Land });
@@ -374,6 +379,7 @@ impl Enemy for Dog {
 
     fn draw(&self, assets: &Assets) {
         assets.dog.draw(self.animator.frame(), vec2(self.x, self.y), self.facing, WHITE);
+        draw_text(&format!("{:?} {}", self.state, self.animator.frame()), self.x - 50.0, self.y - 110.0, 22.0, RED);
     }
 
     fn strikes(&self, assets: &Assets, body: Rect) -> bool {

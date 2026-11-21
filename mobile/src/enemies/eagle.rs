@@ -93,6 +93,7 @@ impl Eagle {
     }
 
     fn set_state(&mut self, state: State) {
+        info!("DBG eagle pos={:.0},{:.0} vel={:.0},{:.0} {:?} -> {:?}", self.pos.x, self.pos.y, self.vel.x, self.vel.y, self.state, state);
         self.state = state;
         self.state_time = 0.0;
     }
@@ -169,6 +170,7 @@ impl Enemy for Eagle {
             || hitbox.top() > view.bottom() + EXIT_BELOW
         {
             self.alive = false;
+            info!("DBG eagle gone pos={:.0},{:.0}", self.pos.x, self.pos.y);
         }
     }
 
@@ -189,6 +191,8 @@ impl Enemy for Eagle {
 
     fn draw(&self, assets: &Assets) {
         assets.eagle.draw(self.animator.frame(), self.head(), self.facing, WHITE);
+        draw_text(&format!("{:?} {}", self.state, self.animator.frame()), self.pos.x - 50.0, self.pos.y - 70.0, 22.0, RED);
+        let h = self.hitbox(); draw_rectangle_lines(h.x, h.y, h.w, h.h, 2.0, YELLOW);
     }
 
     fn strikes(&self, assets: &Assets, body: Rect) -> bool {
