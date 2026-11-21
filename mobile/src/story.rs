@@ -694,10 +694,9 @@ pub fn draw_level_clear(assets: &Assets, info: &LevelInfo, tally: &Tally, time: 
     let pop = ease_out_back(time / 0.6);
     outlined("Level Clear!", 300.0, 100.0 - (1.0 - pop) * 160.0, fit_size("Level Clear!", 68.0, 560.0),
              GOLD_TEXT, INK, Align::Center);
-    shadowed(info.title, 300.0, 146.0, 26.0, CREAM, Align::Center);
 
     // The friend cheering in the nest, sparkles about
-    let nest_at = vec2(300.0, 330.0);
+    let nest_at = vec2(300.0, 400.0);
     for i in 0..5 {
         let a = t * 0.8 + i as f32 * TAU / 5.0;
         let at = nest_at + vec2(a.cos() * 130.0, -60.0 + a.sin() * 50.0);
@@ -711,9 +710,11 @@ pub fn draw_level_clear(assets: &Assets, info: &LevelInfo, tally: &Tally, time: 
     }
     let hop = (t * 5.0).sin().abs() * 20.0;
     friend_in_nest(assets, &info.friend.cheer_frame((t * 6.0) as usize), nest_at, 1.6, hop, 1.0, 1.0);
+    // After the friend, so tall ears hopping up can't cover it
+    shadowed(info.title, 300.0, 146.0, 26.0, CREAM, Align::Center);
 
     let say_in = appear(time, 0.3, 0.4);
-    let bubble = speech_bubble(info.thanks, info.friend.full_name(), 372.0 + (1.0 - say_in) * 20.0,
+    let bubble = speech_bubble(info.thanks, info.friend.full_name(), 442.0 + (1.0 - say_in) * 20.0,
                                vec2(nest_at.x, nest_at.y + 6.0), 24.0, say_in);
 
     // The tally, counting up one row at a time
@@ -1257,12 +1258,18 @@ pub mod paint {
         Color::new(color.r, color.g, color.b, color.a * alpha.clamp(0.0, 1.0))
     }
 
+    /// Sizes text is rasterised at. The font atlas keeps every size it has drawn and never
+    /// lets go, so snapping to these stops each new window size from adding a fresh set.
+    const RASTER_SIZES: [u16; 22] =
+        [10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48, 56, 64, 72, 84, 96, 112, 128, 160, 192];
+
     /// The font size to rasterise at and the scale to draw it with, so text is rendered at the
     /// screen's real resolution rather than blown up from playfield pixels.
     fn font(size: f32) -> (u16, f32) {
         let scale = View::fit().scale.max(0.05);
-        let px = (size * scale).round().max(1.0);
-        (px as u16, size / px)
+        let wanted = (size * scale).round().max(1.0);
+        let px = RASTER_SIZES.into_iter().find(|&px| px as f32 >= wanted).unwrap_or(RASTER_SIZES[RASTER_SIZES.len() - 1]);
+        (px, size / px as f32)
     }
 
     pub fn measure(text: &str, size: f32) -> f32 {

@@ -152,6 +152,29 @@ class QuadSurface
     @SuppressWarnings("deprecation")
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
+        // Volume, media and camera keys belong to the system: let Android handle them
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_VOLUME_UP:
+            case KeyEvent.KEYCODE_VOLUME_DOWN:
+            case KeyEvent.KEYCODE_VOLUME_MUTE:
+            case KeyEvent.KEYCODE_MUTE:
+            case KeyEvent.KEYCODE_CAMERA:
+            case KeyEvent.KEYCODE_ZOOM_IN:
+            case KeyEvent.KEYCODE_ZOOM_OUT:
+            case KeyEvent.KEYCODE_HEADSETHOOK:
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_STOP:
+            case KeyEvent.KEYCODE_MEDIA_NEXT:
+            case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+            case KeyEvent.KEYCODE_MEDIA_REWIND:
+            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+            case KeyEvent.KEYCODE_MEDIA_RECORD:
+                return false;
+            default:
+                break;
+        }
         if (event.getAction() == KeyEvent.ACTION_DOWN && keyCode != 0) {
             QuadNative.surfaceOnKeyDown(keyCode);
         }
@@ -334,6 +357,9 @@ public class MainActivity extends Activity {
         super.onDestroy();
 
         QuadNative.activityOnDestroy();
+        // miniquad starts the game's native thread once per process, so a new activity in this
+        // process could never run it again: end the process and let the next launch start fresh
+        android.os.Process.killProcess(android.os.Process.myPid());
     }
 
     @Override

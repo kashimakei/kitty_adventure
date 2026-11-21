@@ -246,47 +246,58 @@ pub struct Assets {
 }
 
 impl Assets {
-    /// Load every character, drawing a progress bar between them so the screen isn't blank.
+    /// Load every character behind a progress bar.
     pub async fn load() -> Self {
-        const STEPS: f32 = 10.0;
-        let mut done = 0.0;
-        let mut progress = |label: &str| {
-            done += 1.0;
-            draw_loading(done / STEPS, label);
-        };
-        draw_loading(0.0, "Waking up Kitty...");
-        next_frame().await;
-        let kitty = Sprites::load("kitty").await;
-        progress("Planting the trees...");
-        next_frame().await;
-        let foliage = Sprites::load("foliage").await;
-        progress("Hiding the fish treats...");
-        next_frame().await;
-        let items = Sprites::load("items").await;
-        progress("Finding Kitty's friends...");
-        next_frame().await;
-        let friends = Sprites::load("friends").await;
-        progress("Letting the dogs out...");
-        next_frame().await;
-        let dog = Sprites::load("dog").await;
-        progress("Waking the squirrels...");
-        next_frame().await;
-        let squirrel = Sprites::load("squirrel").await;
-        progress("Coiling the snakes...");
-        next_frame().await;
-        let snake = Sprites::load("snake").await;
-        progress("Gathering the crows...");
-        next_frame().await;
-        let crow = Sprites::load("crow").await;
-        progress("Calling the eagles...");
-        next_frame().await;
-        let eagle = Sprites::load("eagle").await;
-        let background = load_texture("background.png").await.expect("background.png");
+        let mut progress = Progress { done: 0 };
+        let kitty = progress.load("kitty", "Waking up Kitty...").await;
+        let foliage = progress.load("foliage", "Planting the trees...").await;
+        let items = progress.load("items", "Hiding the fish treats...").await;
+        let friends = progress.load("friends", "Finding Kitty's friends...").await;
+        let dog = progress.load("dog", "Letting the dogs out...").await;
+        let squirrel = progress.load("squirrel", "Waking the squirrels...").await;
+        let snake = progress.load("snake", "Coiling the snakes...").await;
+        let crow = progress.load("crow", "Gathering the crows...").await;
+        let eagle = progress.load("eagle", "Calling the eagles...").await;
+        let background = while_loading(load_texture("background.png"), 1.0, "Ready!").await.expect("background.png");
         background.set_filter(FilterMode::Linear);
-        progress("Ready!");
+        draw_loading(1.0, "Ready!");
         next_frame().await;
         Self { kitty, dog, eagle, squirrel, snake, crow, friends, items, foliage, background }
     }
+}
+
+/// How many characters Assets::load works through.
+const LOAD_STAGES: usize = 9;
+
+struct Progress {
+    done: usize,
+}
+
+impl Progress {
+    async fn load(&mut self, dir: &str, label: &str) -> Sprites {
+        let fraction = self.done as f32 / LOAD_STAGES as f32;
+        // Show the bar for at least one frame, even where loading never has to wait
+        draw_loading(fraction, label);
+        next_frame().await;
+        let sprites = while_loading(Sprites::load(dir), fraction, label).await;
+        self.done += 1;
+        sprites
+    }
+}
+
+/// Await `future`, redrawing the loading screen on every frame it keeps the game waiting:
+/// each frame starts cleared, so drawing it once would leave the screen blank while the web
+/// build downloads its files.
+async fn while_loading<T>(future: impl Future<Output = T>, fraction: f32, label: &str) -> T {
+    let mut future = Box::pin(future);
+    std::future::poll_fn(move |cx| {
+        let poll = future.as_mut().poll(cx);
+        if poll.is_pending() {
+            draw_loading(fraction, label);
+        }
+        poll
+    })
+    .await
 }
 
 fn draw_loading(fraction: f32, label: &str) {

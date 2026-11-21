@@ -11,7 +11,7 @@ use crate::enemies::{self, Enemy, EnemyCtx, KittyView, Projectile, Sfx, Spawner}
 use crate::input::Controls;
 use crate::items::{Item, ItemKind};
 use crate::kitty::{Kitty, Push, Support};
-use crate::level::{self, Difficulty};
+use crate::level::{self, Difficulty, LevelPlan};
 use crate::limb::{Attachment, Limb, LimbId, LimbSpec};
 use crate::rng::Rng;
 use crate::sprites::Assets;
@@ -67,50 +67,7 @@ impl World {
         let plan = level::generate(level, lap, seed);
         let difficulty = level::difficulty(level, lap);
         let mut rng = Rng::new(seed ^ 0xC0FFEE);
-        let half = TRUNK_WIDTH / 2.0;
-
-        // Branches first, then forks, which need their parent's shape to know where they sprout
-        let mut limbs: Vec<Limb> = plan.branches.iter().map(|b| {
-            let mut limb = Limb::new(&LimbSpec {
-                start: vec2(plan.tree_xs[b.tree], b.y),
-                direction: b.direction,
-                length: b.length,
-                thickness: b.thickness,
-                stiffness: b.stiffness,
-                gnarl: b.gnarl,
-                rise: 0.0,
-                strength: b.strength,
-                tree: b.tree,
-                trunk_half: half,
-                attachment: None,
-                seed: rng.next_u64(),
-            });
-            limb.is_goal = b.goal;
-            limb.settle();
-            limb
-        }).collect();
-        for fork in &plan.forks {
-            let parent = &limbs[fork.parent];
-            let node = ((parent.segments() as f32 * fork.node_frac) as usize).clamp(2, parent.segments() - 1);
-            // Sprout from inside the parent's wood so the join is hidden
-            let start = parent.top_point(node) + vec2(0.0, parent.thickness * 0.25);
-            let mut limb = Limb::new(&LimbSpec {
-                start,
-                direction: parent.direction,
-                length: fork.length,
-                thickness: fork.thickness,
-                stiffness: fork.stiffness,
-                gnarl: fork.gnarl,
-                rise: fork.rise,
-                strength: 0.0,
-                tree: parent.tree,
-                trunk_half: 0.0,
-                attachment: Some(Attachment { parent: fork.parent, node }),
-                seed: rng.next_u64(),
-            });
-            limb.settle();
-            limbs.push(limb);
-        }
+        let mut limbs = build_limbs(&plan, &mut rng);
         for limb in &mut limbs {
             limb.decorate(&mut rng, difficulty.autumn);
         }
@@ -189,13 +146,7 @@ impl World {
     fn apply(&mut self, pushes: Vec<Push>) {
         for push in pushes {
             match push {
-                Push::Load { limb, x, weight } => {
-                    self.limbs[limb].branch.apply_load(x, weight);
-                    if let Some(Attachment { parent, node }) = self.limbs[limb].attachment {
-                        let px = self.limbs[parent].top_point(node).x;
-                        self.limbs[parent].branch.apply_load(px, weight * FORK_LOAD_SHARE);
-                    }
-                }
+                Push::Load { limb, x, weight } => load_limb(&mut self.limbs, limb, x, weight),
                 Push::Kick { limb, x, speed } => {
                     self.limbs[limb].kick(x, speed);
                     if speed > 0.6 {
@@ -223,12 +174,15 @@ impl World {
         self.prev_camera = vec2(self.camera.x, self.camera.y);
         self.prev_kitty = vec2(self.kitty.x, self.kitty.y);
         self.time += STEP;
-        let wind = self.difficulty.wind;
-        self.breeze = 1.5 + wind * ((0.5 * self.time).sin() + 0.3 * (1.7 * self.time + 1.0).sin());
+        self.breeze = breeze_at(self.time, self.difficulty.wind);
 
         if self.rescued {
-            // The friend cheers while Kitty waits; the world keeps swaying
+            // The friend cheers while Kitty waits, still riding (and weighing down) the branch;
+            // the world keeps swaying
             self.rescue_time += STEP;
+            self.kitty.resolve(&self.limbs);
+            let pushes = std::mem::take(&mut self.kitty.pushes);
+            self.apply(pushes);
             self.step_limbs();
             self.effects.drift(self.camera.view_rect(), &mut self.rng);
             return Outcome::Playing;
@@ -340,16 +294,10 @@ impl World {
     }
 
     fn step_limbs(&mut self) {
-        // Parents come before their forks, so forks follow where the parent is now
-        for i in 0..self.limbs.len() {
-            let anchor = self.limbs[i].attachment.map(|a| self.limbs[a.parent].top_point(a.node));
-            let (time, breeze) = (self.time, self.breeze);
-            self.limbs[i].step(breeze, time, anchor, &mut self.rng);
-            if self.limbs[i].just_snapped {
-                self.sfx.push(Sfx::Snap);
-                let at = self.limbs[i].tip();
-                self.effects.shake_leaves(at, 6, &mut self.rng);
-            }
+        step_limbs(&mut self.limbs, self.breeze, self.time, &mut self.rng);
+        for limb in self.limbs.iter().filter(|l| l.just_snapped) {
+            self.sfx.push(Sfx::Snap);
+            self.effects.shake_leaves(limb.tip(), 6, &mut self.rng);
         }
     }
 
@@ -499,4 +447,78 @@ impl World {
     pub fn top_y(&self) -> f32 {
         self.top_y
     }
+}
+
+/// The level's limbs: branches first, then forks, which need their parent's shape to know where
+/// they sprout. Settled, so nothing springs about when play starts.
+pub fn build_limbs(plan: &LevelPlan, rng: &mut Rng) -> Vec<Limb> {
+    let half = TRUNK_WIDTH / 2.0;
+
+    // Branches first, then forks, which need their parent's shape to know where they sprout
+    let mut limbs: Vec<Limb> = plan.branches.iter().map(|b| {
+        let mut limb = Limb::new(&LimbSpec {
+            start: vec2(plan.tree_xs[b.tree], b.y),
+            direction: b.direction,
+            length: b.length,
+            thickness: b.thickness,
+            stiffness: b.stiffness,
+            gnarl: b.gnarl,
+            rise: 0.0,
+            strength: b.strength,
+            tree: b.tree,
+            trunk_half: half,
+            attachment: None,
+            seed: rng.next_u64(),
+        });
+        limb.is_goal = b.goal;
+        limb.settle();
+        limb
+    }).collect();
+    for fork in &plan.forks {
+        let parent = &limbs[fork.parent];
+        let node = ((parent.segments() as f32 * fork.node_frac) as usize).clamp(2, parent.segments() - 1);
+        // Sprout from inside the parent's wood so the join is hidden
+        let start = parent.top_point(node) + vec2(0.0, parent.thickness * 0.25);
+        let mut limb = Limb::new(&LimbSpec {
+            start,
+            direction: parent.direction,
+            length: fork.length,
+            thickness: fork.thickness,
+            stiffness: fork.stiffness,
+            gnarl: fork.gnarl,
+            rise: fork.rise,
+            strength: 0.0,
+            tree: parent.tree,
+            trunk_half: 0.0,
+            attachment: Some(Attachment { parent: fork.parent, node }),
+            seed: rng.next_u64(),
+        });
+        limb.track_anchor(parent.top_point(node));
+        limb.settle();
+        limbs.push(limb);
+    }
+    limbs
+}
+
+/// One physics step for every limb. Parents come before their forks, so forks follow where the
+/// parent is now.
+pub fn step_limbs(limbs: &mut [Limb], breeze: f32, time: f32, rng: &mut Rng) {
+    for i in 0..limbs.len() {
+        let anchor = limbs[i].attachment.map(|a| limbs[a.parent].top_point(a.node));
+        limbs[i].step(breeze, time, anchor, rng);
+    }
+}
+
+/// Weight on a limb; a fork passes most of it on to its parent.
+pub fn load_limb(limbs: &mut [Limb], limb: LimbId, x: f32, weight: f32) {
+    limbs[limb].branch.apply_load(x, weight);
+    if let Some(Attachment { parent, node }) = limbs[limb].attachment {
+        let px = limbs[parent].top_point(node).x;
+        limbs[parent].branch.apply_load(px, weight * FORK_LOAD_SHARE);
+    }
+}
+
+/// The wind at `time`: a steady breeze with slow gusts that grow with the level's wind.
+pub fn breeze_at(time: f32, wind: f32) -> f32 {
+    1.5 + wind * ((0.5 * time).sin() + 0.3 * (1.7 * time + 1.0).sin())
 }

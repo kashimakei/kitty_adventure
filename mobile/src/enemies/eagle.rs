@@ -129,7 +129,11 @@ impl Enemy for Eagle {
 
         match self.state {
             State::Cruise => {
-                if !self.swooped && 0.0 < ahead && ahead < SWOOP_RANGE && target.y > self.pos.y - SWOOP_ABOVE {
+                // Only wind up where Kitty can see it, so the screech and glide are a fair warning
+                let v = ctx.view;
+                let on_screen = Rect::new(v.x + 40.0, v.y + 40.0, v.w - 80.0, v.h - 80.0).contains(self.pos);
+                if !self.swooped && on_screen && 0.0 < ahead && ahead < SWOOP_RANGE
+                    && target.y > self.pos.y - SWOOP_ABOVE {
                     self.set_state(State::Windup);
                     self.swooped = true;
                     self.vel.y = 0.0;

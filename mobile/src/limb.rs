@@ -122,6 +122,12 @@ impl Limb {
         if self.breakable() { self.branch.stress / self.branch.strength } else { 0.0 }
     }
 
+    /// For forks: where the parent's attach node is, so the first step only moves the base by
+    /// how far the parent has moved since (the base itself sits a little sunk into the wood).
+    pub fn track_anchor(&mut self, anchor: Vec2) {
+        self.anchor = anchor;
+    }
+
     /// One physics step. `parent_anchor` is where the parent's attach node is now, for forks.
     pub fn step(&mut self, breeze: f32, time: f32, parent_anchor: Option<Vec2>, rng: &mut Rng) {
         self.remember_surface();

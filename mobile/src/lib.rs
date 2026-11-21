@@ -19,6 +19,7 @@ pub mod items;
 pub mod kitty;
 pub mod level;
 pub mod limb;
+pub mod platform;
 pub mod rng;
 pub mod save;
 pub mod sprites;
@@ -26,6 +27,8 @@ pub mod story;
 pub mod tree;
 pub mod world;
 
+use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
+use macroquad::miniquad::EventHandler;
 use macroquad::prelude::*;
 
 use crate::audio::Audio;
@@ -154,10 +157,44 @@ impl Game {
     }
 }
 
+/// Notices the app being put away (Home, a call, a system dialog, the browser tab hidden), so
+/// play can pause instead of carrying on without the player.
+struct Lifecycle {
+    subscriber: usize,
+    minimized: bool,
+}
+
+impl EventHandler for Lifecycle {
+    fn update(&mut self) {}
+    fn draw(&mut self) {}
+    fn window_minimized_event(&mut self) {
+        self.minimized = true;
+    }
+}
+
+impl Lifecycle {
+    /// Whether the app was away since the last frame. A long gap between frames counts too, for
+    /// platforms that just stop drawing while hidden.
+    fn was_away(&mut self) -> bool {
+        let subscriber = self.subscriber;
+        repeat_all_miniquad_input(self, subscriber);
+        std::mem::take(&mut self.minimized) || get_frame_time() > 0.25
+    }
+}
+
 pub async fn run() {
-    let assets = Assets::load().await;
-    let audio = Audio::load().await;
+    // Desktop runs from mobile/ with the staged files in assets/; the web and Android builds
+    // serve them from their root
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+    macroquad::file::set_pc_assets_folder("assets");
+    // The buttons read touches directly; touches mirrored as a mouse could leave a button held
+    // after a cancelled touch
+    simulate_mouse_with_touch(false);
+    let mut lifecycle = Lifecycle { subscriber: register_input_subscriber(), minimized: false };
+    // Sounds load in the background alongside the sprites
+    let audio = Audio::load();
     audio.start_music();
+    let assets = Assets::load().await;
     let mut game = Game::new();
     let mut accumulator = 0.0;
     let mut jump_queued = false;
@@ -166,6 +203,8 @@ pub async fn run() {
     loop {
         let view = View::fit();
         let controls = input::read(&view);
+        let was_away = lifecycle.was_away();
+        audio.update();
         let dt = get_frame_time().min(MAX_FRAME_DT);
         game.screen_time += dt;
         clear_background(Color::new(0.06, 0.06, 0.09, 1.0));
@@ -174,7 +213,9 @@ pub async fn run() {
             Screen::Title => {
                 set_camera(&view.screen_camera());
                 story::draw_title(&assets, game.screen_time, game.high_score);
-                if controls.any_tap && game.screen_time > 0.4 {
+                if controls.back {
+                    platform::send_to_background();
+                } else if controls.any_tap && game.screen_time > 0.4 {
                     game.new_game();
                 }
             }
@@ -235,7 +276,7 @@ pub async fn run() {
                 hud::draw(&assets, &hud, game.screen_time);
                 input::draw_buttons(&controls);
                 let world = game.world.as_ref().unwrap();
-                if controls.pause {
+                if controls.pause || controls.back || was_away {
                     game.go(Screen::Paused);
                 } else if outcome == Outcome::OutOfHearts {
                     game.lives = game.lives.saturating_sub(1);
@@ -257,7 +298,7 @@ pub async fn run() {
                 world.draw(&assets, &view, 1.0);
                 set_camera(&view.screen_camera());
                 story::draw_paused(game.screen_time);
-                if (controls.pause || controls.any_tap) && game.screen_time > 0.3 {
+                if (controls.pause || controls.back || controls.any_tap) && game.screen_time > 0.3 {
                     accumulator = 0.0;
                     game.go(Screen::Playing);
                 }
@@ -292,7 +333,7 @@ pub async fn run() {
             Screen::GameOver => {
                 set_camera(&view.screen_camera());
                 story::draw_game_over(&assets, game.score, game.previous_best, game.screen_time);
-                if controls.any_tap && game.screen_time > 1.0 {
+                if (controls.any_tap || controls.back) && game.screen_time > 1.0 {
                     game.go(Screen::Title);
                 }
             }

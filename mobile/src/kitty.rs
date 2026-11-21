@@ -239,6 +239,12 @@ impl Kitty {
         if let Some(id) = self.hanging_on {
             match limbs[id].surface_y(self.x) {
                 None => self.let_go(limbs[id].broken()),
+                // A low limb sagging under her has lowered her feet to the ground: stand there
+                Some(s) if s - GRIP_DEPTH + KITTY_BOX.1 >= GROUND_Y => {
+                    self.let_go(false);
+                    self.land(Support::Ground, GROUND_Y);
+                    return Some(Support::Ground);
+                }
                 Some(s) => {
                     self.y = s - GRIP_DEPTH + KITTY_BOX.1;
                     self.pushes.push(Push::Load { limb: id, x: self.x, weight: KITTY_WEIGHT });
@@ -265,6 +271,12 @@ impl Kitty {
                     if let Support::Limb(id) = support {
                         if limbs[id].broken() {
                             self.panicking = true;
+                        } else if let Some((next, s)) = self.step_across(limbs, id) {
+                            // Walking down a fork onto its parent, or onto a branch just
+                            // alongside: step across instead of dropping through it
+                            self.standing_on = Some(next);
+                            self.y = s;
+                            return None;
                         }
                     }
                     self.standing_on = None;
@@ -285,7 +297,10 @@ impl Kitty {
         let candidates = std::iter::once(Support::Ground).chain((0..limbs.len()).map(Support::Limb));
         for support in candidates {
             if let Some(s) = self.support_surface(support, limbs, &feet) {
-                if self.prev_y <= s + LANDING_TOLERANCE && self.y >= s && best.is_none_or(|(_, b)| s < b) {
+                // The ground is solid: nothing is below it, so it catches Kitty however she
+                // got under its surface (e.g. letting go of a limb sagging into the grass)
+                let from_above = support == Support::Ground || self.prev_y <= s + LANDING_TOLERANCE;
+                if from_above && self.y >= s && best.is_none_or(|(_, b)| s < b) {
                     best = Some((support, s));
                 }
             }
@@ -297,13 +312,28 @@ impl Kitty {
         if let Support::Limb(id) = support {
             self.pushes.push(Push::Kick { limb: id, x: self.x, speed: self.velocity * LANDING_KICK });
         }
+        self.land(support, s);
+        Some(support)
+    }
+
+    fn land(&mut self, support: Support, s: f32) {
         self.y = s;
         self.falling = false;
         self.velocity = 0.0;
         self.standing_on = Some(support);
         self.just_landed = true;
         self.panicking = false;
-        Some(support)
+    }
+
+    /// Another limb under Kitty's paws within a small step up or down of where she is, for
+    /// when she walks off the end of the one she was on.
+    fn step_across(&self, limbs: &[Limb], from: LimbId) -> Option<(Support, f32)> {
+        let feet = self.feet();
+        (0..limbs.len())
+            .filter(|&id| id != from && !limbs[id].broken())
+            .filter_map(|id| limbs[id].surface_under(&feet).map(|s| (Support::Limb(id), s)))
+            .filter(|&(_, s)| s >= self.y - STEP_ACROSS_UP && s <= self.y + LANDING_TOLERANCE)
+            .min_by(|a, b| (a.1 - self.y).abs().total_cmp(&(b.1 - self.y).abs()))
     }
 
     /// Falling just short of a branch: catch it if the raised paws cross its top.
@@ -317,6 +347,10 @@ impl Kitty {
                 continue;
             }
             let Some(s) = limb.surface_y(self.x) else { continue };
+            // Too low to hang from: her feet would be in the ground
+            if s - GRIP_DEPTH + KITTY_BOX.1 >= GROUND_Y {
+                continue;
+            }
             if prev_top + GRAB_REACH <= s && s <= self.top() + GRAB_REACH {
                 self.hanging_on = Some(id);
                 self.falling = false;

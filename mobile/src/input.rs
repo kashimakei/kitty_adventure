@@ -13,7 +13,8 @@ pub struct Controls {
     pub jump_held: bool, // still held: a longer press jumps higher
     pub down: bool,      // tapped this frame: let go of a branch
     pub pause: bool,     // tapped this frame
-    pub any_tap: bool,   // any tap or key this frame, for "tap to continue" screens
+    pub back: bool,      // Android's Back button or gesture this frame
+    pub any_tap: bool,   // a tap or a continue key this frame, for "tap to continue" screens
 }
 
 pub struct Button {
@@ -48,9 +49,11 @@ pub fn read(view: &View) -> Controls {
         touches.iter().any(|t| t.phase == TouchPhase::Started && b.near(view.to_playfield(t.position)))
             || (is_mouse_button_pressed(MouseButton::Left) && b.near(mouse))
     };
+    // Only real taps and the keys that mean "go on": Back, volume and other system keys
+    // also arrive as key presses and mustn't skip screens
     let any_tap = touches.iter().any(|t| t.phase == TouchPhase::Started)
         || is_mouse_button_pressed(MouseButton::Left)
-        || get_last_key_pressed().is_some();
+        || [KeyCode::Enter, KeyCode::KpEnter, KeyCode::Space].into_iter().any(is_key_pressed);
     Controls {
         left: held(&LEFT) || is_key_down(KeyCode::Left) || is_key_down(KeyCode::A),
         right: held(&RIGHT) || is_key_down(KeyCode::Right) || is_key_down(KeyCode::D),
@@ -60,6 +63,7 @@ pub fn read(view: &View) -> Controls {
             || is_key_down(KeyCode::W),
         down: tapped(&DOWN) || is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S),
         pause: tapped(&PAUSE) || is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::P),
+        back: is_key_pressed(KeyCode::Back),
         any_tap,
     }
 }
