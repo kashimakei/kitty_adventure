@@ -42,8 +42,10 @@ const LUNGE_MAX: f32 = 64.0;
 const LIFT_MAX: f32 = 44.0;
 const JAW_TOP: f32 = 51.0;
 const LIFT_MARGIN: f32 = 14.0;
-/// Rattles a little while rearing, so the tell reads even at a glance.
-const REAR_SHAKE: f32 = 1.5;
+/// While rearing it draws back this far from Kitty and rattles, so the tell reads even at a glance
+/// (its head-up watching pose looks much the same otherwise).
+const REAR_PULL: f32 = 9.0;
+const REAR_SHAKE: f32 = 2.0;
 const RECOVER_TIME: f32 = 0.3;
 /// Seconds before it can strike again on the first level; the level's pace shortens them.
 const STRIKE_COOLDOWN: (f32, f32) = (1.4, 2.2);
@@ -249,7 +251,8 @@ impl Enemy for Snake {
                     self.lunge(ctx, lo, hi);
                 } else {
                     self.state = State::Rear { timer };
-                    self.offset.x = (timer * 70.0).sin() * REAR_SHAKE;
+                    let u = timer / REAR_TIME;
+                    self.offset.x = -self.facing * REAR_PULL * u * (2.0 - u) + (timer * 70.0).sin() * REAR_SHAKE;
                 }
             }
             State::Lunge { timer, reach } => {
@@ -260,7 +263,10 @@ impl Enemy for Snake {
                     self.cooldown = ctx.rng.pair(STRIKE_COOLDOWN) / pace(ctx.difficulty);
                 } else {
                     self.state = State::Lunge { timer, reach };
-                    self.offset = reach * lunge_extent(timer);
+                    // Springs forward from where it drew back to
+                    let extent = lunge_extent(timer);
+                    let back = if timer < LUNGE_OUT { REAR_PULL * (1.0 - extent) } else { 0.0 };
+                    self.offset = reach * extent - vec2(self.facing * back, 0.0);
                 }
             }
             State::Recover { timer } => {
