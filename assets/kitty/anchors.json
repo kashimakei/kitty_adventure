@@ -73,15 +73,23 @@
       "climb_4.png",
       "climb_5.png"
     ],
-    "crouch": [
-      "crouch_0.png",
-      "crouch_1.png",
-      "crouch_2.png"
-    ],
     "pounce": [
       "pounce_0.png",
       "pounce_1.png",
       "pounce_2.png"
+    ],
+    "swish_a": [
+      "swish_a_0.png",
+      "swish_a_1.png",
+      "swish_a_2.png"
+    ],
+    "swish_b": [
+      "swish_b_0.png",
+      "swish_b_1.png",
+      "swish_b_2.png"
+    ],
+    "stalk": [
+      "stalk_0.png"
     ]
   },
   "anchors": {
@@ -245,18 +253,6 @@
       54,
       90
     ],
-    "crouch_0.png": [
-      86,
-      81
-    ],
-    "crouch_1.png": [
-      78,
-      58
-    ],
-    "crouch_2.png": [
-      87,
-      57
-    ],
     "pounce_0.png": [
       61,
       94
@@ -268,6 +264,34 @@
     "pounce_2.png": [
       84,
       81
+    ],
+    "swish_a_0.png": [
+      80,
+      101
+    ],
+    "swish_a_1.png": [
+      73,
+      106
+    ],
+    "swish_a_2.png": [
+      87,
+      62
+    ],
+    "swish_b_0.png": [
+      83,
+      61
+    ],
+    "swish_b_1.png": [
+      73,
+      85
+    ],
+    "swish_b_2.png": [
+      73,
+      96
+    ],
+    "stalk_0.png": [
+      79,
+      85
     ]
   },
   "hits": {}

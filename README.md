@@ -44,7 +44,7 @@ up there, and reach the friend waiting in a nest at the top.
     <td align="center" width="33%"><img src="docs/images/level-intro.jpg" width="250" alt="Level intro"><br><sub>Sunny needs help</sub></td>
   </tr>
   <tr>
-    <td align="center" width="33%"><img src="docs/images/charging.jpg" width="250" alt="Kitty crouched on a branch charging a pounce, the ring at her feet sparkling, with a crow at the nest and snakes below"><br><sub>Charging a pounce</sub></td>
+    <td align="center" width="33%"><img src="docs/images/charging.jpg" width="250" alt="Kitty crouched on a branch charging a pounce, her tail swishing and the ring at her feet sparkling, with snakes coiled on the branches nearby"><br><sub>Charging a pounce</sub></td>
     <td align="center" width="33%"><img src="docs/images/pounce.jpg" width="250" alt="Kitty leaping toward Sunny's nest past a coiled snake"><br><sub>Pounce!</sub></td>
     <td align="center" width="33%"><img src="docs/images/level-clear.jpg" width="250" alt="Level clear tally"><br><sub>Mochi is home!</sub></td>
   </tr>
@@ -96,21 +96,23 @@ up there, and reach the friend waiting in a nest at the top.
 </table>
 
 A new threat joins on each level, from squirrels on the first to eagles on the fifth. Land on a
-squirrel, snake or crow from above to bop it. Every enemy gives a warning before it attacks (a
-snarl, a rear, a screech), and only teeth, beaks, claws and acorns hurt.
+squirrel or snake from above to bop it, or pounce on a crow or eagle, even in mid-air (an eagle is
+worth double). Every enemy gives a warning before it attacks (a snarl, a rear, a screech), and only
+teeth, beaks, claws and acorns hurt.
 
 ## How to play
 
 | | On a phone | On a keyboard |
 |---|---|---|
-| Walk and run | slide a thumb on the left half: the further, the faster | ← → or A D (hold Shift to walk) |
+| Walk and run | slide the bar at the bottom left: the further, the faster | ← → or A D (hold Shift to walk) |
 | Jump | hold the right half to crouch, let go to pounce | hold Space, ↑ or W, let go to pounce |
 | Climb up when hanging | tap the right half | Space, ↑ or W |
 | Let go, or drop through a branch | swipe down on the right half | ↓ or S |
 | Pause | the II button, or Back | Esc or P |
 
-- **Charge up.** The longer Kitty crouches, the higher she pounces: the ring at her feet fills
-  up, and sparkles when she's ready for her biggest leap. A quick tap is a little hop.
+- **Charge up.** The longer Kitty crouches, the higher she pounces: her tail swishes faster, and
+  the ring at her feet fills up and sparkles when she's ready for her biggest leap. A quick tap is
+  a little hop.
 - **Hang on.** Fall just short of a branch and Kitty catches it by the paws; tap the right half to
   climb up, or swipe down there to let go.
 - **Bounce.** Branches spring like trampolines. Keep holding as Kitty lands and let go as the ring
@@ -130,7 +132,7 @@ snarl, a rear, a screech), and only teeth, beaks, claws and acorns hurt.
 
 - Soft-body branches simulated in Rust: they sag, wobble, fork and snap, and Kitty can bounce
   on them like trampolines.
-- Touch controls made for thumbs: a floating slider to walk and run, hold and release to pounce,
+- Touch controls made for thumbs: a slider bar to walk and run, hold and release to pounce,
   swipe down to drop.
 - Five story levels with their own friend and threat, then endless rounds that get wilder.
 - Three-screen-wide levels with a minimap, and layered parallax scenery: clouds, misty

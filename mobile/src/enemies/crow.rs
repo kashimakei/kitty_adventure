@@ -1,8 +1,8 @@
 //! A crow: flaps in from one side on a wavy path, cawing as it arrives. When it passes over Kitty it
 //! may brake and flap hard for a moment (the tell), then dive at her beak first, pull up and carry
 //! on. Some crows stop on a limb tip for a rest, riding it as it bends; from there one caws and dives
-//! if Kitty passes below, and hops off if she walks up to it. Only the beak hurts. Stomp it while
-//! it's perched or diving and it tumbles out of the sky.
+//! if Kitty passes below, and hops off if she walks up to it. Only the beak hurts. Stomp it, perched
+//! or in flight, and it tumbles out of the sky.
 
 use macroquad::prelude::*;
 
@@ -81,6 +81,8 @@ const FLEE_RANGE: f32 = 110.0;
 const HURT_TIME: f32 = 0.35;
 /// Over its back and head, from its body: generous for a thumb on a phone.
 const STOMP_AREA: Rect = Rect { x: -34.0, y: -30.0, w: 66.0, h: 34.0 };
+/// Perched, its head (and the open beak of the caw) stands higher.
+const PERCH_STOMP_AREA: Rect = Rect { x: -28.0, y: -36.0, w: 60.0, h: 40.0 };
 
 static FLY: Clip = Clip { frames: &["fly_0", "fly_1", "fly_2", "fly_3", "fly_4", "fly_5"], fps: 12.0, looped: true };
 // The tell: hanging in the air, flapping hard
@@ -480,14 +482,9 @@ impl Enemy for Crow {
         self.healthy() && assets.crow.strikes(frame, at, self.facing, body)
     }
 
-    fn stomp_box(&self, _assets: &Assets) -> Option<Rect> {
-        let stompable = match self.state {
-            State::Perched { .. } | State::PerchTell { .. } | State::Dive { .. } => true,
-            // Still swooping low out of a dive
-            State::Climb { vel, .. } => vel.y > 0.0,
-            _ => false,
-        };
-        stompable.then(|| faced(STOMP_AREA, self.pos, self.facing))
+    fn stomp_box(&self) -> Option<Rect> {
+        let area = if self.frame().0.starts_with("perched") { PERCH_STOMP_AREA } else { STOMP_AREA };
+        self.healthy().then(|| faced(area, self.pos, self.facing))
     }
 
     fn in_front(&self) -> bool {

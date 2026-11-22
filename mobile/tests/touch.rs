@@ -1,18 +1,19 @@
 //! The touch gestures, driven headless with playfield positions and timestamps the way
 //! `input::Input` replays them each frame.
 
-use kitty_mobile::input::touch::{Gestures, Phase, Recogniser, Thresholds, MOUSE_ID};
+use kitty_mobile::input::touch::{Gestures, Phase, Recogniser, Thresholds, MOUSE_ID, SLIDER_CENTRE, SLIDER_REACH};
 use kitty_mobile::input::{Controls, Keys, Pending, Raw, Recorder};
 use macroquad::math::{vec2, Vec2};
 use macroquad::miniquad::{EventHandler, KeyCode, MouseButton};
 
-/// 10 playfield units per mm: dead zone 15, full speed 150, swipe 70.
+/// 10 playfield units per mm: dead zone 15, swipe 70.
 fn recogniser() -> Recogniser {
     Recogniser::new(Thresholds::new(10.0))
 }
 
 const FRAME: f64 = 1.0 / 60.0;
-/// Somewhere on the right half (the action finger) and the left half (the slider).
+/// Somewhere on the right half (the action finger), and on the left half (the slider) straight
+/// above the slider bar's middle.
 const RIGHT: Vec2 = Vec2::from_array([450.0, 800.0]);
 const LEFT: Vec2 = Vec2::from_array([150.0, 900.0]);
 
@@ -23,13 +24,13 @@ fn nothing(g: &Gestures) -> bool {
 #[test]
 fn thresholds_scale_with_density_within_bounds() {
     let t = Thresholds::new(10.0);
-    assert_eq!((t.dead_zone, t.full_speed, t.swipe), (15.0, 150.0, 70.0));
+    assert_eq!((t.dead_zone, t.swipe), (15.0, 70.0));
     // A huge or broken density lands on the bounds instead of making gestures impossible
     let big = Thresholds::new(100.0);
     let tiny = Thresholds::new(0.0);
     let nan = Thresholds::new(f32::NAN);
-    assert!(big.full_speed <= 180.0 && big.swipe <= 110.0 && big.dead_zone <= 24.0);
-    assert!(tiny.full_speed >= 50.0 && tiny.swipe >= 28.0 && tiny.dead_zone >= 4.0);
+    assert!(big.swipe <= 110.0 && big.dead_zone <= 24.0);
+    assert!(tiny.swipe >= 28.0 && tiny.dead_zone >= 4.0);
     assert_eq!(nan, tiny);
     assert!(Thresholds::new(f32::INFINITY) == big);
 }
@@ -171,6 +172,7 @@ fn slow_or_sideways_drags_never_drop() {
 
 #[test]
 fn the_slider_has_a_dead_zone_and_reaches_full_speed() {
+    assert_eq!(LEFT.x, SLIDER_CENTRE.x);
     let mut r = recogniser();
     r.event(0, Phase::Down, LEFT, 0.0);
     let g = r.take();
@@ -184,7 +186,7 @@ fn the_slider_has_a_dead_zone_and_reaches_full_speed() {
     r.event(0, Phase::Move, LEFT + vec2(80.0, 0.0), 3.0 * FRAME);
     let mid = r.take().move_x;
     assert!(mid > slow && mid < 1.0, "{mid}");
-    r.event(0, Phase::Move, LEFT + vec2(145.0, 0.0), 4.0 * FRAME);
+    r.event(0, Phase::Move, LEFT + vec2(SLIDER_REACH - 5.0, 0.0), 4.0 * FRAME);
     assert_eq!(r.take().move_x, 1.0, "close to full snaps to full");
     r.event(0, Phase::Move, LEFT + vec2(-150.0, 30.0), 5.0 * FRAME);
     assert_eq!(r.take().move_x, -1.0);
@@ -194,20 +196,24 @@ fn the_slider_has_a_dead_zone_and_reaches_full_speed() {
 }
 
 #[test]
-fn the_slider_centre_trails_a_thumb_that_goes_too_far() {
+fn the_slider_bar_stays_put_and_the_knob_goes_where_the_thumb_is() {
     let mut r = recogniser();
-    r.event(0, Phase::Down, LEFT, 0.0);
-    // Well past full speed (the slider keeps the finger even across the middle)
-    r.event(0, Phase::Move, LEFT + vec2(450.0, 0.0), FRAME);
+    // Landing left of the bar's middle walks left straight away, wherever up the left half
+    r.event(0, Phase::Down, vec2(SLIDER_CENTRE.x - 70.0, 300.0), 0.0);
+    let g = r.take();
+    assert!(g.move_x < -0.5 && g.move_x > -1.0 && !g.press, "{g:?}");
+    // Well past the end (the slider keeps the finger even across the middle): the knob stops at
+    // the end, at full speed
+    r.event(0, Phase::Move, vec2(SLIDER_CENTRE.x + 450.0, 300.0), FRAME);
     assert_eq!(r.take().move_x, 1.0);
-    let slider = r.slider().unwrap();
-    assert_eq!(slider.finger.x - slider.origin.x, 180.0, "the centre trails at 1.2x full speed");
-    // So coming back 180 stops her, instead of having to come back 450
-    r.event(0, Phase::Move, LEFT + vec2(270.0, 0.0), 2.0 * FRAME);
+    assert_eq!(r.slider().unwrap().offset(), SLIDER_REACH);
+    // Back over the middle stops her, however far the thumb went
+    r.event(0, Phase::Move, vec2(SLIDER_CENTRE.x + 5.0, 600.0), 2.0 * FRAME);
     assert_eq!(r.take().move_x, 0.0);
-    r.event(0, Phase::Move, LEFT + vec2(120.0, 0.0), 3.0 * FRAME);
-    assert_eq!(r.take().move_x, -1.0);
+    r.event(0, Phase::Up, vec2(SLIDER_CENTRE.x + 5.0, 600.0), 3.0 * FRAME);
+    assert!(r.slider().is_none());
 }
+
 
 #[test]
 fn the_newest_thumb_takes_over_the_slider() {
@@ -215,10 +221,11 @@ fn the_newest_thumb_takes_over_the_slider() {
     r.event(0, Phase::Down, LEFT, 0.0);
     r.event(0, Phase::Move, LEFT + vec2(150.0, 0.0), FRAME);
     assert_eq!(r.take().move_x, 1.0);
-    // A second thumb lands: it's the slider now, centred where it landed
-    let other = vec2(60.0, 1000.0);
+    // A second thumb lands left of the middle: it's the slider now, going left
+    let other = vec2(SLIDER_CENTRE.x - 60.0, 1000.0);
     r.event(1, Phase::Down, other, 2.0 * FRAME);
-    assert_eq!(r.take().move_x, 0.0);
+    let g = r.take().move_x;
+    assert!(g < -0.3 && g > -1.0, "{g}");
     r.event(1, Phase::Move, other - vec2(150.0, 0.0), 3.0 * FRAME);
     assert_eq!(r.take().move_x, -1.0);
     // The first thumb no longer does anything, even when it lifts

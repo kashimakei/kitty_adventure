@@ -1,6 +1,7 @@
 //! Enemies share one interface so the world can step, draw and collide them alike. Only their
 //! damaging pixels (paws, jaws, beaks, talons; see sprites.rs) hurt Kitty, and only on her body.
-//! Small ones (squirrels, snakes, crows) can be stomped from above.
+//! All but the dogs can be stomped from above: squirrels and snakes on their branches, crows and
+//! eagles in the air too.
 
 pub mod crow;
 pub mod dog;
@@ -78,11 +79,15 @@ pub trait Enemy {
     /// Do this enemy's damaging pixels touch `body`?
     fn strikes(&self, assets: &Assets, body: Rect) -> bool;
     /// The area Kitty's feet must land on to stomp it, if it can be stomped right now.
-    fn stomp_box(&self, _assets: &Assets) -> Option<Rect> {
+    fn stomp_box(&self) -> Option<Rect> {
         None
     }
     /// Kitty landed on it from above.
     fn stomped(&mut self) {}
+    /// What stomping it scores.
+    fn stomp_points(&self) -> u32 {
+        crate::consts::SCORE_STOMP
+    }
     /// Draw over Kitty rather than behind her (while striking at her).
     fn in_front(&self) -> bool {
         false

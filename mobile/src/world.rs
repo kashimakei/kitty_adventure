@@ -292,32 +292,18 @@ impl World {
         }
     }
 
-    /// Stomps first (feet landing on a small enemy), then anything that strikes Kitty's body.
+    /// Stomps first (feet landing on an enemy), then anything that strikes Kitty's body.
     /// Hits need the frames' damage masks, so the game calls this with the assets after `step`.
     pub fn collide_with_assets(&mut self, assets: &Assets) {
         if self.rescued {
             return;
         }
-        let feet = self.kitty.stomp_feet();
-        let falling = self.kitty.velocity > 1.0 && self.kitty.airborne();
-        let mut stomped = false;
-        for enemy in &mut self.enemies {
-            if falling && !stomped {
-                if let Some(target) = enemy.stomp_box(assets) {
-                    if target.overlaps(&feet) {
-                        enemy.stomped();
-                        stomped = true;
-                        let at = enemy.position();
-                        self.points += SCORE_STOMP;
-                        self.effects.sparkle(at);
-                        self.effects.popup(at, format!("+{SCORE_STOMP}"), Color::new(1.0, 0.9, 0.3, 1.0));
-                        self.sfx.push(Sfx::Stomp);
-                        continue;
-                    }
-                }
-            }
-        }
-        if stomped {
+        if let Some(i) = stomp(&self.kitty, &mut self.enemies) {
+            let (at, points) = (self.enemies[i].position(), self.enemies[i].stomp_points());
+            self.points += points;
+            self.effects.sparkle(at);
+            self.effects.popup(at, format!("+{points}"), Color::new(1.0, 0.9, 0.3, 1.0));
+            self.sfx.push(Sfx::Stomp);
             self.kitty.bounce();
             return;
         }
@@ -541,6 +527,18 @@ pub struct KittyStep {
     pub landed: Option<Support>,
     /// Where a limb took a kick hard enough to shake leaves loose.
     pub shakes: Vec<Vec2>,
+}
+
+/// Kitty coming down with her feet on an enemy that can be stomped right now, on a branch or in
+/// the air: it's stomped, and its index returned. One per step.
+pub fn stomp(kitty: &Kitty, enemies: &mut [Box<dyn Enemy>]) -> Option<usize> {
+    if kitty.velocity <= 1.0 || !kitty.airborne() {
+        return None;
+    }
+    let feet = kitty.stomp_feet();
+    let i = enemies.iter().position(|e| e.stomp_box().is_some_and(|target| target.overlaps(&feet)))?;
+    enemies[i].stomped();
+    Some(i)
 }
 
 /// One step of Kitty: her jump and drop input, moving, then riding, catching or landing on

@@ -60,8 +60,8 @@ static SIT: KittyClip = kclip!(&["sit_0"], 1.0, true);
 static WALK: KittyClip = kclip!(&["walk_0", "walk_1", "walk_2", "walk_3"], 10.0, true);
 static RUN_START: KittyClip = kclip!(&["run_start_0"], 8.0, false);
 static RUN: KittyClip = kclip!(&["run_0", "run_1", "run_2"], 12.0, true);
-/// Crouched and charging. The frame follows the charge rather than the clock (see `frame`).
-static CHARGE: KittyClip = kclip!(&["crouch_0", "crouch_1", "crouch_2", "pounce_1"], 1.0, true, Pin::Feet, CROUCH_BODY);
+/// Crouched and charging: a stalk, then the tail swish, faster once the charge is full (see `frame`).
+static CHARGE: KittyClip = kclip!(&SWISH, 1.0, true, Pin::Feet, CROUCH_BODY);
 /// Springing off, then tucked
 static RISE: KittyClip = kclip!(&["pounce_2", "mid_jump_0"], 8.0, false);
 static APEX: KittyClip = kclip!(&["mid_jump_1"], 1.0, true);
@@ -79,14 +79,16 @@ static LET_GO: KittyClip = kclip!(&["let_go_0", "let_go_1"], 6.0, false, Pin::Fe
 static CLIMB: KittyClip = kclip!(&["climb_0", "climb_1", "climb_2", "climb_3", "climb_4"], 5.0 * 60.0 / CLIMB_STEPS as f32, false);
 static CLIMB_DONE: KittyClip = kclip!(&["climb_5"], 3.0, false);
 
-/// The crouch deepening as the charge builds: each frame up to its charge level.
-const CROUCH: [(f32, &str); 3] = [(0.2, "crouch_0"), (0.55, "crouch_1"), (1.0, "crouch_2")];
-/// Fully charged: a butt wiggle between these, with a little squash and sway.
-const WIGGLE: [&str; 2] = ["crouch_2", "pounce_1"];
-const WIGGLE_FPS: f32 = 6.0;
-const WIGGLE_SQUASH: f32 = 0.04;
-const WIGGLE_SWAY: f32 = 0.035;
-/// How much the crouch squashes her as it deepens, before the wiggle.
+/// A charge starts with her settling into a stalk, until it's this far built.
+const STALK: &str = "stalk_0";
+const STALK_UNTIL: f32 = 0.25;
+/// Then she's crouched with her tail swishing: up, back, low, back, up and curling over the top,
+/// and back again, at the first speed (frames a second) and at the second once the charge is
+/// full, ready to pounce.
+const SWISH: [&str; 10] = ["swish_a_1", "swish_a_2", "swish_b_0", "swish_a_2", "swish_a_1", "swish_b_1",
+                           "swish_a_0", "swish_b_2", "swish_a_0", "swish_b_1"];
+const SWISH_FPS: (f32, f32) = (9.0, 16.0);
+/// How much the crouch squashes her as it deepens.
 const CROUCH_SQUASH: f32 = 0.05;
 
 /// She runs above this share of top speed, and is back to walking below `WALK_BELOW`.
@@ -202,8 +204,6 @@ pub struct Kitty {
     running: bool,
     idle_time: f32,
     next_fidget: f32,
-    /// Seconds spent fully charged, for the wiggle.
-    full_time: f32,
     just_landed: bool,
     just_grabbed: bool,
     just_climbed: bool,
@@ -248,7 +248,6 @@ impl Kitty {
             running: false,
             idle_time: 0.0,
             next_fidget: 4.0,
-            full_time: 0.0,
             just_landed: false,
             just_grabbed: false,
             just_climbed: false,
@@ -300,7 +299,7 @@ impl Kitty {
         }
     }
 
-    /// Feet rectangle used to stomp small enemies.
+    /// Feet rectangle used to stomp enemies.
     pub fn stomp_feet(&self) -> Rect {
         Rect::new(self.x - 26.0, self.y - 14.0, 52.0, 16.0)
     }
@@ -830,11 +829,17 @@ impl Kitty {
         true
     }
 
-    /// Bounce up off an enemy Kitty just stomped.
+    /// Bounce up off an enemy Kitty just stomped, out of any drop, let-go or panic pose. She still
+    /// passes through what she was dropping or falling through, but coming down again she may
+    /// catch the branch she let go of, as on any fresh fall.
     pub fn bounce(&mut self) {
         self.falling = true;
         self.standing_on = None;
         self.leapt = false;
+        self.dropping = false;
+        self.panicking = false;
+        self.released_from = None;
+        self.released_steps = 0;
         self.velocity = STOMP_BOUNCE;
     }
 
@@ -900,6 +905,7 @@ impl Kitty {
         } else if self.charge.is_some() {
             self.idle_time = 0.0;
             self.play(&CHARGE);
+            rate = if self.charge_level().unwrap_or(1.0) < 1.0 { SWISH_FPS.0 } else { SWISH_FPS.1 };
         } else if speed > 0.0 {
             self.idle_time = 0.0;
             self.running = if self.running { speed > WALK_BELOW } else { speed > RUN_ABOVE };
@@ -937,7 +943,6 @@ impl Kitty {
         if self.idle_time == 0.0 {
             self.next_fidget = rng.pair(FIDGET_DELAY);
         }
-        self.full_time = if self.charge_level() == Some(1.0) { self.full_time + dt } else { 0.0 };
         self.just_landed = false;
         self.just_grabbed = false;
         self.just_climbed = false;
@@ -945,14 +950,10 @@ impl Kitty {
         self.clip_time += dt * rate;
     }
 
-    /// The frame to show now. Crouching, the frame follows the charge, then wiggles at full.
+    /// The frame to show now. Crouching, a stalk as the charge starts, then the tail swish.
     fn frame(&self) -> &'static str {
-        if self.is(&CHARGE) {
-            let t = self.charge_level().unwrap_or(1.0);
-            if t < 1.0 {
-                return CROUCH.iter().find(|&&(upto, _)| t < upto).map_or(WIGGLE[0], |&(_, frame)| frame);
-            }
-            return WIGGLE[(self.full_time * WIGGLE_FPS) as usize % WIGGLE.len()];
+        if self.is(&CHARGE) && self.charge_level().is_some_and(|t| t < STALK_UNTIL) {
+            return STALK;
         }
         let clip = &self.clip.clip;
         let i = (self.clip_time * clip.fps) as usize;
@@ -972,16 +973,10 @@ impl Kitty {
         };
         let at = vec2(self.x, pin_y) + offset;
         if self.is(&CHARGE) {
-            // Squashing down into the crouch, then a wiggle and sway, ready to pounce
+            // Squashing down into the crouch as the charge builds, ready to pounce
             let t = self.charge_level().unwrap_or(1.0);
-            let (scale, sway) = if t < 1.0 {
-                (vec2(1.0 + CROUCH_SQUASH * 0.6 * t, 1.0 - CROUCH_SQUASH * t), 0.0)
-            } else {
-                let beat = (self.full_time * WIGGLE_FPS * PI).sin();
-                let squash = CROUCH_SQUASH + WIGGLE_SQUASH * beat.abs();
-                (vec2(1.0 + squash * 0.6, 1.0 - squash), WIGGLE_SWAY * beat * self.facing)
-            };
-            assets.kitty.draw_stretched(self.frame(), at, self.facing, scale, sway, WHITE);
+            let scale = vec2(1.0 + CROUCH_SQUASH * 0.6 * t, 1.0 - CROUCH_SQUASH * t);
+            assets.kitty.draw_stretched(self.frame(), at, self.facing, scale, 0.0, WHITE);
         } else {
             assets.kitty.draw(self.frame(), at, self.facing, WHITE);
         }

@@ -120,6 +120,7 @@ pub const SCORE_FISH: u32 = 10;
 pub const SCORE_GOLD: u32 = 50;
 pub const SCORE_SPARE_HEART: u32 = 25;
 pub const SCORE_STOMP: u32 = 100;
+pub const SCORE_STOMP_EAGLE: u32 = 200;
 pub const SCORE_RESCUE: u32 = 1000;
 pub const SCORE_NO_DAMAGE: u32 = 500;
 pub const SCORE_PER_SECOND_LEFT: u32 = 10;

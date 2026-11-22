@@ -51,7 +51,8 @@ NOSE_DARK = 110       # max channel value for nose-black pixels
 # Per character: its sheets, background grey, which frame sets the scale and how tall it should
 # be in game pixels, and its animations. Sheets painted at different sizes can set
 # "match_sheet_areas" to be scaled so the character's average silhouette area matches the
-# reference sheet's (silhouette area hardly changes with pose). Each animation is
+# reference sheet's (silhouette area hardly changes with pose). A pose painted lighter or darker
+# than its siblings can be recoloured to match one of them with "tone_match". Each animation is
 #   name -> (sheet, (left, top, right, bottom), anchor mode[, scale multiplier])
 # and collects every blob whose centre falls inside the region, left to right.
 CHARACTERS = {
@@ -64,6 +65,10 @@ CHARACTERS = {
             "hang_climb": "assets/source/kitty_sheet_hang_climb.jpg",
             # Gemini, with the core sheet as reference; its bottom row just echoes the reference
             "pounce": "assets/source/kitty_sheet_pounce.jpg",
+            # Gemini, from the owner: the charging crouch with the tail swishing, and a crouch
+            # sinking from a stalk to belly-low
+            "swish": "assets/source/kitty_sheet_swish.jpg",
+            "crouch": "assets/source/kitty_sheet_crouch.jpg",
         },
         "reference": ("walk", 0),
         "target_height": 88,  # the size everything else is judged against
@@ -88,9 +93,15 @@ CHARACTERS = {
             "hang":      ("hang_climb", (0, 50, 1330, 580), "grip"),
             "let_go":    ("hang_climb", (1330, 50, 2000, 580), "center"),
             "climb":     ("hang_climb", (0, 600, 2000, 1116), "nose"),
-            # Pounce sheet: crouching to charge a jump, the tail-swish wiggle and the spring
-            "crouch":    ("pounce", (0, 330, 2400, 820), "nose", 0.6),
+            # Pounce sheet: the spring out of the crouch
             "pounce":    ("pounce", (0, 840, 2400, 1400), "nose", 0.6),
+            # Swish sheet: crouched to charge, the tail swishing (two rows of three). Kitty is
+            # painted bigger on it than on the pounce and crouch sheets
+            "swish_a":   ("swish", (0, 0, 2400, 860), "nose", 0.52),
+            "swish_b":   ("swish", (0, 860, 2400, 1792), "nose", 0.52),
+            # Crouch sheet: the stalk she settles into as a charge starts (top left). The rest of
+            # the sheet sinks on to belly-low with a tail or two, for later
+            "stalk":     ("crouch", (0, 0, 800, 860), "nose", 0.6),
         },
     },
     "dog": {
@@ -193,6 +204,8 @@ CHARACTERS = {
         # Pip's fur is nearly the background grey: key gently and leave enclosed grey alone
         "outside_tolerance": 20,
         "enclosed_tolerance": None,
+        # Pip's last cheer pose is painted paler than the rest; the one before is the same pose
+        "tone_match": {"pip_cheer_3": "pip_cheer_2"},
         # The hedgehog row also holds a faded copy of the reference kitty around x 550-1000
         "animations": {
             "pip_help":    ("friends", (0, 0, 560, 450), "center"),
@@ -376,6 +389,43 @@ def damage_mask(frame, rule, paw_strip_from=0.0, nose_rows=(0.0, 0.92)):
     return hit.to_surface(setcolor=(255, 255, 255, 255), unsetcolor=(0, 0, 0, 0))
 
 
+def match_tones(frame, like):
+    """`frame` recoloured so each channel's spread of values over its solid pixels matches
+    `like`'s (histogram matching)."""
+    def channels(surface):
+        w, h = surface.get_size()
+        solid = [c for c in (surface.get_at((x, y)) for y in range(h) for x in range(w)) if c[3] >= 128]
+        return [[c[i] for c in solid] for i in range(3)]
+
+    def cumulative(values):
+        counts = [0] * 256
+        for v in values:
+            counts[v] += 1
+        total, run, shares = len(values), 0, []
+        for n in counts:
+            run += n
+            shares.append(run / total)
+        return shares
+
+    tables = []
+    for mine, theirs in zip(channels(frame), channels(like)):
+        mine, theirs = cumulative(mine), cumulative(theirs)
+        table, j = [], 0
+        for v in range(256):
+            while j < 255 and theirs[j] < mine[v]:
+                j += 1
+            table.append(j)
+        tables.append(table)
+    out = frame.copy()
+    w, h = out.get_size()
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = out.get_at((x, y))
+            if a:
+                out.set_at((x, y), (tables[0][r], tables[1][g], tables[2][b], a))
+    return out
+
+
 def slice_character(name, spec):
     sheets = {sheet: load_sheet(path) for sheet, path in spec["sheets"].items()}
     blobs = {sheet: find_blobs(surface, spec) for sheet, surface in sheets.items()}
@@ -427,6 +477,11 @@ def slice_character(name, spec):
             names.append(frame_name)
         manifest["animations"][anim] = names
         print(f"{name} {anim:10} {len(names)} frame(s)")
+    for frame_name, like in spec.get("tone_match", {}).items():
+        path = os.path.join(out_dir, f"{frame_name}.png")
+        like_frame = pygame.image.load(os.path.join(out_dir, f"{like}.png"))
+        pygame.image.save(match_tones(pygame.image.load(path), like_frame), path)
+        print(f"{name} {frame_name} recoloured to match {like}")
     with open(os.path.join(out_dir, "anchors.json"), "w") as f:
         json.dump(manifest, f, indent=2)
 

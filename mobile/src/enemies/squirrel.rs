@@ -288,7 +288,7 @@ impl Enemy for Squirrel {
         }
     }
 
-    fn stomp_box(&self, _assets: &Assets) -> Option<Rect> {
+    fn stomp_box(&self) -> Option<Rect> {
         match self.state {
             State::Idle { .. } | State::Scamper { .. } | State::Throw { .. } if self.placed => {
                 Some(faced(STOMP_AREA, self.pos, self.facing))

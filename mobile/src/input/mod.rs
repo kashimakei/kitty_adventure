@@ -74,8 +74,11 @@ const AWAY_FRAME_TIME: f32 = 1.0;
 const PAUSE_CENTRE: Vec2 = Vec2::from_array([572.0, 92.0]);
 const PAUSE_RADIUS: f32 = 24.0;
 /// The slider's knob, and the track's thickness.
-const KNOB_RADIUS: f32 = 34.0;
+const KNOB_RADIUS: f32 = 30.0;
 const TRACK_THICKNESS: f32 = 12.0;
+/// The arrows just past either end of the track.
+const ARROW_GAP: f32 = 8.0;
+const ARROW_SIZE: f32 = 10.0;
 
 /// An input event as it arrived, positions in raw window pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -345,16 +348,13 @@ impl Input {
         }
     }
 
-    /// Draw the slider while a thumb holds it, brief rings and chevrons acknowledging the
-    /// action finger, and the pause button (in the screen camera).
+    /// Draw the slider bar (always, on a touch screen) with its knob where the thumb has it,
+    /// brief rings and chevrons acknowledging the action finger, and the pause button (in the
+    /// screen camera).
     pub fn draw(&self) {
-        if let Some(slider) = self.touch.slider() {
-            let full = self.touch.thresholds.full_speed;
-            let (x, y) = (slider.origin.x, slider.origin.y);
-            draw_rectangle(x - full, y - TRACK_THICKNESS / 2.0, full * 2.0, TRACK_THICKNESS, Color::new(1.0, 1.0, 1.0, 0.16));
-            let knob = x + (slider.finger.x - x).clamp(-full, full);
-            draw_circle(knob, y, KNOB_RADIUS, Color::new(1.0, 1.0, 1.0, 0.35));
-            draw_circle_lines(knob, y, KNOB_RADIUS, 2.0, Color::new(0.15, 0.15, 0.15, 0.3));
+        let slider = self.touch.slider();
+        if self.is_touch() || slider.is_some() {
+            draw_slider(slider.map_or(0.0, |s| s.offset()), slider.is_some());
         }
         let now = date::now();
         for mark in self.touch.marks() {
@@ -378,6 +378,52 @@ impl Input {
         draw_circle(PAUSE_CENTRE.x, PAUSE_CENTRE.y, PAUSE_RADIUS, Color::new(1.0, 1.0, 1.0, 0.35));
         for dx in [-6.0, 6.0] {
             draw_rectangle(PAUSE_CENTRE.x + dx - 3.0, PAUSE_CENTRE.y - 9.0, 6.0, 18.0, Color::new(0.1, 0.1, 0.1, 0.7));
+        }
+    }
+}
+
+/// The slider bar: a track with rounded ends and arrows past them, a notch in the middle where
+/// Kitty stands still, and the knob `offset` from it (brighter while held). Everything is see-through
+/// with a dark rim, so it reads over sky and leaves alike.
+fn draw_slider(offset: f32, held: bool) {
+    let (centre, reach) = (touch::SLIDER_CENTRE, touch::SLIDER_REACH);
+    let edge = Color::new(0.1, 0.1, 0.1, 0.35);
+    let white = Color::new(1.0, 1.0, 1.0, 0.25);
+    let r = TRACK_THICKNESS / 2.0;
+    capsule(centre, reach, r + 1.5, edge);
+    capsule(centre, reach, r, white);
+    draw_rectangle(centre.x - 1.5, centre.y - r - 4.0, 3.0, TRACK_THICKNESS + 8.0, Color::new(1.0, 1.0, 1.0, 0.35));
+    for side in [-1.0, 1.0] {
+        let tip = centre.x + side * (reach + r + ARROW_GAP + ARROW_SIZE);
+        let back = tip - side * ARROW_SIZE;
+        let points = [vec2(tip, centre.y), vec2(back, centre.y - ARROW_SIZE), vec2(back, centre.y + ARROW_SIZE)];
+        let middle = (points[0] + points[1] + points[2]) / 3.0;
+        // A dark rim (the arrow grown about its middle), then the arrow
+        for (grow, color) in [(1.3, edge), (1.0, Color::new(1.0, 1.0, 1.0, 0.45))] {
+            let [a, b, c] = points.map(|p| middle + (p - middle) * grow);
+            draw_triangle(a, b, c, color);
+        }
+    }
+    let knob = centre.x + offset;
+    let fill = if held { 0.45 } else { 0.28 };
+    draw_circle(knob, centre.y, KNOB_RADIUS, Color::new(1.0, 1.0, 1.0, fill));
+    draw_circle_lines(knob, centre.y, KNOB_RADIUS, 2.0, Color::new(0.15, 0.15, 0.15, 0.35));
+}
+
+/// A see-through bar `reach` either way of `centre`, `r` thick each side, with round ends. Its
+/// pieces don't overlap, so it's evenly see-through, with no brighter seams.
+fn capsule(centre: Vec2, reach: f32, r: f32, color: Color) {
+    draw_rectangle(centre.x - reach, centre.y - r, reach * 2.0, r * 2.0, color);
+    const SLICES: usize = 10;
+    for side in [-1.0f32, 1.0] {
+        let end = vec2(centre.x + side * reach, centre.y);
+        // The outer half of a disc, as a fan of slices
+        let point = |i: usize| {
+            let angle = -std::f32::consts::FRAC_PI_2 + std::f32::consts::PI * i as f32 / SLICES as f32;
+            end + vec2(side * angle.cos(), angle.sin()) * r
+        };
+        for i in 0..SLICES {
+            draw_triangle(end, point(i), point(i + 1), color);
         }
     }
 }

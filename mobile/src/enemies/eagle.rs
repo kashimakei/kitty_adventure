@@ -1,11 +1,13 @@
 //! Eagle, ported from the pygame game's platform.py: cruises across drifting toward Kitty's
 //! height, and once she's ahead and below it glides with wings set (the warning), swoops at her
-//! with talons out, then pulls away and leaves. Only its beak and talons hurt.
+//! with talons out, then pulls away and leaves. Only its beak and talons hurt. Land on its back,
+//! whatever it's doing, and it tumbles out of the sky.
 
 use std::f32::consts::{PI, TAU};
 
 use macroquad::prelude::*;
 
+use super::squirrel::{faced, hurt_tint, Tumble, TUMBLE_SPIN};
 use super::{Enemy, EnemyCtx, Kind, KittyView, Sfx};
 use crate::consts::*;
 use crate::rng::Rng;
@@ -40,6 +42,20 @@ const PLUNGE_STEEPNESS: f32 = 1.3; // falling this many times faster than flying
 /// once this far out of sight any way at all.
 const EXIT_MARGIN: f32 = 80.0;
 const EXIT_BELOW: f32 = 150.0;
+/// Over its back, head and the roots of its wings, from the hitbox centre facing right: generous
+/// for a thumb on a phone, and with her feet deeper than Kitty falls in a step, so she can't drop
+/// through it.
+const STOMP_AREA: Rect = Rect { x: -46.0, y: -44.0, w: 92.0, h: 40.0 };
+/// Plunging head down, its back and tail (and a trailing foot) stand higher.
+const PLUNGE_STOMP_AREA: Rect = Rect { x: -46.0, y: -76.0, w: 92.0, h: 72.0 };
+/// Stomped, it hangs stunned this long (s), losing speed fast (per s), before it drops.
+const HURT_TIME: f32 = 0.35;
+const HURT_DRAG: f32 = 8.0;
+/// The tumble's head-first frame is tall, so it's anchored here from the hitbox centre (facing
+/// right) rather than at the head, to start where the stunned body was instead of reaching up
+/// into Kitty bouncing off it. A big bird drops rather than flipping up.
+const TUMBLE_FROM: Vec2 = vec2(26.0, 16.0);
+const TUMBLE_FLING: Vec2 = vec2(-40.0, -60.0);
 
 // Built from the frames sliced out of the eagle sheet (as in the pygame game)
 static FLAP: Clip = Clip { frames: &["flap_0", "flap_1", "flap_2", "flap_3", "flap_4"], fps: 10.0, looped: true };
@@ -47,13 +63,20 @@ static GLIDE: Clip = Clip { frames: &["dive_0", "dive_1"], fps: 4.0, looped: tru
 static PLUNGE: Clip = Clip { frames: &["dive_2", "dive_3"], fps: 8.0, looped: true }; // steep dive
 static TALONS: Clip = Clip { frames: &["talon_0", "talon_1", "talon_2", "talon_3", "talon_4"], fps: 12.0, looped: false };
 static RECOVER: Clip = Clip { frames: &["dive_4", "flap_0", "flap_1"], fps: 8.0, looped: false };
+// Stomped: wings flung up, then head first out of the sky
+static HURT: Clip = Clip { frames: &["dive_4"], fps: 1.0, looped: false };
+static TUMBLE: Clip = Clip { frames: &["dive_3"], fps: 1.0, looped: true };
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy)]
 enum State {
     Cruise,
     Windup,
     Swoop,
     Recover,
+    /// Just stomped: stunned a moment before it drops.
+    Hurt,
+    /// Tumbling down (its frame anchored at `TUMBLE_FROM`).
+    Falling(Tumble),
 }
 
 pub struct Eagle {
@@ -105,6 +128,16 @@ impl Eagle {
         self.pos + vec2(HEAD_OFFSET.x * self.facing, HEAD_OFFSET.y)
     }
 
+    fn healthy(&self) -> bool {
+        !matches!(self.state, State::Hurt | State::Falling(_))
+    }
+
+    fn fall(&mut self) {
+        let spin = if self.facing < 0.0 { -TUMBLE_SPIN } else { TUMBLE_SPIN };
+        let from = self.pos + vec2(TUMBLE_FROM.x * self.facing, TUMBLE_FROM.y);
+        self.state = State::Falling(Tumble::new(from, vec2(TUMBLE_FLING.x * self.facing, TUMBLE_FLING.y), spin));
+    }
+
     fn hitbox(&self) -> Rect {
         Rect::new(self.pos.x - HITBOX.x / 2.0, self.pos.y - HITBOX.y / 2.0, HITBOX.x, HITBOX.y)
     }
@@ -115,13 +148,19 @@ impl Eagle {
         let m = EXIT_MARGIN;
         let past_side = if self.facing > 0.0 { hitbox.left() > view.right() + m } else { hitbox.right() < view.left() - m };
         let around = Rect::new(view.x - m, view.y - m, view.w + 2.0 * m, view.h + 2.0 * m);
-        let spent = self.swooped && self.state == State::Cruise && !around.overlaps(&hitbox);
+        let spent = self.swooped && matches!(self.state, State::Cruise) && !around.overlaps(&hitbox);
         past_side || hitbox.top() > view.bottom() + EXIT_BELOW || spent
     }
 }
 
 impl Enemy for Eagle {
     fn step(&mut self, ctx: &mut EnemyCtx) {
+        if let State::Falling(tumble) = &mut self.state {
+            tumble.step();
+            self.pos = tumble.pos - vec2(TUMBLE_FROM.x * self.facing, TUMBLE_FROM.y);
+            self.alive = !tumble.gone(ctx.view);
+            return;
+        }
         self.state_time += STEP;
         let target = ctx.kitty.rect.center();
         let to_kitty = target - self.pos;
@@ -170,6 +209,14 @@ impl Enemy for Eagle {
                     self.set_state(State::Cruise);
                 }
             }
+            State::Hurt => {
+                self.vel *= 1.0 - HURT_DRAG * STEP;
+                if self.state_time >= HURT_TIME {
+                    self.fall();
+                    return;
+                }
+            }
+            State::Falling(_) => unreachable!("handled above"),
         }
 
         self.pos += self.vel * STEP;
@@ -194,17 +241,41 @@ impl Enemy for Eagle {
             State::Recover => &RECOVER,
             State::Cruise if anim.is(&RECOVER) && !anim.finished() => &RECOVER,
             State::Cruise => &FLAP,
+            State::Hurt => &HURT,
+            State::Falling(_) => &TUMBLE,
         };
         self.animator.play(clip);
         self.animator.update(dt);
     }
 
     fn draw(&self, assets: &Assets) {
-        assets.eagle.draw(self.animator.frame(), self.head(), self.facing, WHITE);
+        let frame = self.animator.frame();
+        match &self.state {
+            State::Falling(tumble) => tumble.draw(&assets.eagle, frame, self.facing),
+            State::Hurt => assets.eagle.draw(frame, self.head(), self.facing, hurt_tint(self.state_time)),
+            _ => assets.eagle.draw(frame, self.head(), self.facing, WHITE),
+        }
     }
 
+    /// The beak and talons hurt whatever it's doing, until it's stomped.
     fn strikes(&self, assets: &Assets, body: Rect) -> bool {
-        assets.eagle.strikes(self.animator.frame(), self.head(), self.facing, body)
+        self.healthy() && assets.eagle.strikes(self.animator.frame(), self.head(), self.facing, body)
+    }
+
+    fn stomp_box(&self) -> Option<Rect> {
+        // Keyed on the clip showing, as `strikes` is
+        let area = if self.animator.is(&PLUNGE) { PLUNGE_STOMP_AREA } else { STOMP_AREA };
+        self.healthy().then(|| faced(area, self.pos, self.facing))
+    }
+
+    fn stomped(&mut self) {
+        if self.healthy() {
+            self.set_state(State::Hurt);
+        }
+    }
+
+    fn stomp_points(&self) -> u32 {
+        SCORE_STOMP_EAGLE
     }
 
     fn alive(&self) -> bool {
