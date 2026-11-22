@@ -512,6 +512,44 @@ fn a_fork_snapping_under_her_drops_her_onto_its_parent() {
     assert!(onto_parent >= 10, "only {onto_parent} snapped forks dropped her onto the parent");
 }
 
+/// Nor do the forks on a stub catch her: when a limb snaps just past where a fork grows out, with
+/// her middle paw past the break, the fork stays on the stub and springs up with it, but she goes
+/// down with the piece that falls, past the fork, as she does past the stub.
+#[test]
+fn a_parent_snapping_past_a_fork_drops_her_past_the_fork() {
+    let results = each_level(0..4, |level, seed| {
+        let base = Sim::new(level, seed);
+        let mut fell = 0;
+        for fork in (0..base.limbs.len()).filter(|&i| base.limbs[i].attachment.is_some()) {
+            let node = base.limbs[fork].attachment.unwrap().node;
+            for dx in [2.0, 6.0, 10.0] {
+                let mut sim = base.family(fork);
+                let x = sim.limbs[0].top_point(node).x + dx * sim.limbs[0].direction;
+                if !sim.stand_on(0, x) {
+                    continue;
+                }
+                sim.limbs[0].snap_at(sim.kitty.x);
+                // Only where the fork stays on the stub and she's past the break
+                if sim.limbs[0].branch.broken_at.is_none_or(|at| at < node) || !sim.limbs[0].fell_away(sim.kitty.x) {
+                    continue;
+                }
+                let context = format!("level {level} seed {seed} fork {fork} at {dx} px past its root");
+                for step in 0..60 {
+                    sim.step(Controls::default());
+                    let k = &sim.kitty;
+                    let on = |id: usize| k.standing_on == Some(Support::Limb(id)) || k.hanging_on == Some(id) || k.climbing_on == Some(id);
+                    assert!(!on(0) && !on(1), "{context}: caught by the {} {step} steps after the snap", if on(0) { "stub" } else { "fork" });
+                }
+                fell += 1;
+            }
+        }
+        fell
+    });
+    let fell: usize = results.iter().sum();
+    println!("{fell} snaps past a fork's root took her down past the fork");
+    assert!(fell >= 20, "only {fell} snaps past a fork's root");
+}
+
 /// Falling from a limb that gave way doesn't outlast catching another: hanging from a sturdy limb
 /// that snaps past her paws, she falls and catches one just below it, climbs up, and a hop
 /// straight back up that takes her over the stub lands her on it.
