@@ -103,11 +103,11 @@ pub struct Dog {
     animator: Animator,
 }
 
-/// Top of `support` under `x`; None off its end, or anywhere on a snapped limb.
+/// Top of `support` under `x`; None off its end, or where a snapped limb's wood has fallen away.
 fn surface(support: Support, limbs: &[Limb], x: f32) -> Option<f32> {
     match support {
         Support::Ground => (0.0..=WORLD_W).contains(&x).then_some(GROUND_Y),
-        Support::Limb(id) if limbs[id].broken() => None,
+        Support::Limb(id) if limbs[id].fell_away(x) => None,
         Support::Limb(id) => limbs[id].surface_y(x),
     }
 }
@@ -162,11 +162,14 @@ impl Dog {
 
     fn think(&mut self, ctx: &mut EnemyCtx, support: Support) {
         // Keep to the walkable span: a branch bending under the dog draws its tip in underfoot
+        // (unless the wood under the dog has snapped off)
         let (lo, hi) = walk_range(support, ctx.limbs);
-        self.x = self.x.clamp(lo, hi);
+        if !matches!(support, Support::Limb(id) if ctx.limbs[id].fell_away(self.x)) {
+            self.x = self.x.clamp(lo, hi);
+        }
         let Some(top) = surface(support, ctx.limbs, self.x) else {
             // The branch snapped, or bent away from under the dog's feet
-            let snapped = matches!(support, Support::Limb(id) if ctx.limbs[id].broken());
+            let snapped = matches!(support, Support::Limb(id) if ctx.limbs[id].gave_way());
             self.jump_target = None;
             self.take_off(0.0, 0.0, snapped);
             return;
@@ -291,7 +294,7 @@ impl Dog {
     /// Is limb `id` an intact branch above the dog and low enough to leap onto?
     fn reachable(&self, limbs: &[Limb], id: LimbId) -> bool {
         let limb = &limbs[id];
-        if self.support == Some(Support::Limb(id)) || limb.broken() {
+        if self.support == Some(Support::Limb(id)) || limb.gone() {
             return false;
         }
         let (lo, hi) = limb.walk_range();

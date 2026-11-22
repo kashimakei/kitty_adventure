@@ -24,9 +24,9 @@ pub enum Support {
 pub enum Push {
     Load { limb: LimbId, x: f32, weight: f32 },
     Kick { limb: LimbId, x: f32, speed: f32 },
-    /// A hard landing's sudden extra load on top of the weight, and the part of it that lingers
-    /// (see `Limb::jolt`).
-    Jolt { limb: LimbId, force: f32, fatigue: f32 },
+    /// A hard landing's sudden extra load at `x` on top of the weight, and the part of it that
+    /// lingers (see `Limb::jolt`).
+    Jolt { limb: LimbId, x: f32, force: f32, fatigue: f32 },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -160,6 +160,11 @@ pub struct Kitty {
     coyote: u32,
     /// Pressed while hanging: steps the press has been held so far.
     climb_wait: Option<u32>,
+    /// A press made while hanging or climbing (or a charge she caught a branch with), still held:
+    /// once she's nearly up, it becomes a crouch, so the release leaps.
+    hold_carry: bool,
+    /// The limb she last leapt from, until she lands: landing back on it braced is a bounce.
+    leapt_from: Option<LimbId>,
     drop_through: Option<DropThrough>,
     /// Dropped through a limb and not caught yet (for the pose).
     dropping: bool,
@@ -209,6 +214,8 @@ impl Kitty {
             buffered: None,
             coyote: 0,
             climb_wait: None,
+            hold_carry: false,
+            leapt_from: None,
             drop_through: None,
             dropping: false,
             leapt: false,
@@ -305,6 +312,17 @@ impl Kitty {
         if repress {
             self.press();
         }
+        if !controls.charge_held {
+            self.hold_carry = false;
+        } else if self.hold_carry && self.charge.is_none() && self.climb_wait.is_none() {
+            // Still holding the press she climbed with (or made while climbing): crouch as soon
+            // as she's nearly up, as a press then would
+            let nearly_up = self.climbing_on.is_some() && self.climb_step + CLIMB_CARRY_STEPS >= CLIMB_STEPS;
+            if self.standing_on.is_some() || nearly_up {
+                self.charge = Some(0);
+                self.hold_carry = false;
+            }
+        }
         if controls.charge_held {
             if let Some(steps) = &mut self.charge {
                 *steps = (*steps + 1).min(CHARGE_STEPS);
@@ -321,10 +339,14 @@ impl Kitty {
     fn press(&mut self) {
         if self.hanging_on.is_some() {
             self.climb_wait.get_or_insert(0);
+            self.hold_carry = true;
         } else if self.climbing_on.is_some() {
-            // Nearly up: the press carries over into a charge for when she's on her feet
+            // Nearly up: the press carries over into a charge for when she's on her feet. Earlier,
+            // it does too if it's still held by then (a quick tap is let go first and does nothing)
             if self.climb_step + CLIMB_CARRY_STEPS >= CLIMB_STEPS {
                 self.charge = Some(0);
+            } else {
+                self.hold_carry = true;
             }
         } else {
             self.charge = Some(0);
@@ -355,7 +377,9 @@ impl Kitty {
         let (tap, full) = LEAP_SPEED;
         let legs = tap + (full - tap) * (1.0 - (1.0 - t).powi(2));
         let mut speed = legs;
+        self.leapt_from = None;
         if let Some(Support::Limb(id)) = self.standing_on {
+            self.leapt_from = Some(id);
             let limb = &limbs[id];
             if let Some(paw) = self.paw_on(limb) {
                 let lost = legs * LEAP_LOSS * limb.give_at(paw);
@@ -368,6 +392,7 @@ impl Kitty {
         self.velocity = -speed.max(tap * 0.5);
         self.charge = None;
         self.buffered = None;
+        self.hold_carry = false;
         self.coyote = 0;
         self.jumped = true;
         self.leapt = true;
@@ -380,10 +405,11 @@ impl Kitty {
         self.charge = None;
         self.buffered = None;
         self.climb_wait = None;
+        self.hold_carry = false;
         if self.hanging_on.is_some() || self.climbing_on.is_some() {
             self.let_go(false);
         } else if let Some(Support::Limb(id)) = self.standing_on {
-            if limbs[id].broken() {
+            if limbs[id].gone() {
                 return;
             }
             self.standing_on = None;
@@ -405,6 +431,7 @@ impl Kitty {
         self.charge = None;
         self.buffered = None;
         self.climb_wait = None;
+        self.hold_carry = false;
     }
 
     // ------------------ Movement (per 60 Hz step) -------------------
@@ -495,13 +522,14 @@ impl Kitty {
             return arrived;
         }
         if let Some(id) = self.hanging_on {
-            // Shuffle in with the tip as the branch bends, rather than slip off its end
-            if !limbs[id].broken() {
+            // Shuffle in with the tip as the branch bends, rather than slip off its end (unless
+            // the part she's holding has snapped off)
+            if !limbs[id].fell_away(self.x) {
                 let (lo, hi) = limbs[id].walk_range();
                 self.x = self.x.clamp(lo, hi);
             }
             match limbs[id].surface_y(self.x) {
-                None => self.let_go(limbs[id].broken()),
+                None => self.let_go(limbs[id].gave_way()),
                 // A low limb sagging under her has lowered her feet to the ground: stand there
                 Some(s) if s - GRIP_DEPTH + KITTY_BOX.1 >= GROUND_Y => {
                     self.let_go(false);
@@ -516,10 +544,14 @@ impl Kitty {
             return None;
         }
         if let Some(support) = self.standing_on {
+            // When a limb snaps under her, she goes down with the piece that falls, even if a
+            // back paw is still on the stub
+            let fell = matches!(support, Support::Limb(id) if limbs[id].just_snapped && limbs[id].fell_away(self.x));
             if let Support::Limb(id) = support {
                 self.hold_tip(&limbs[id]);
             }
-            match self.support_surface(support, limbs, &self.feet()) {
+            let surface = if fell { None } else { self.support_surface(support, limbs, &self.feet()) };
+            match surface {
                 Some(s) => {
                     self.y = s;
                     if let Support::Limb(id) = support {
@@ -537,7 +569,7 @@ impl Kitty {
                 None => {
                     // Walked off the tip, back past the base through the trunk, or it snapped
                     if let Support::Limb(id) = support {
-                        if limbs[id].broken() {
+                        if limbs[id].gave_way() {
                             self.panicking = true;
                         } else if let Some((next, s)) = self.step_across(limbs, id) {
                             // Walking down a fork onto its parent, or onto a branch just
@@ -591,27 +623,31 @@ impl Kitty {
     }
 
     /// Landing on a limb. Braced (still holding the jump) her whole impact goes into it, so it
-    /// dips and throws her back up, and some of the strain lingers; relaxed, her legs soak up most
-    /// of it. Either way a hard landing jolts the wood, less where it gives.
+    /// dips and throws her back up; relaxed, her legs soak up most of it. Either way a hard
+    /// landing jolts the wood, less where it gives. Bouncing (landing braced back on the limb she
+    /// leapt from) drives the whole jolt into it too and leaves some strain lingering; any other
+    /// landing, braced or not, jolts it no harder than a relaxed one, so a long fall onto a
+    /// limb while holding the jump doesn't snap it.
     fn impact(&mut self, id: LimbId, limb: &Limb) {
         let x = self.paw_on(limb).unwrap_or(self.x);
         let braced = self.charge.is_some();
-        let share = if braced { 1.0 } else { RELAXED_LANDING };
+        let bounce = braced && self.leapt_from == Some(id);
+        let share = |full: bool| if full { 1.0 } else { RELAXED_LANDING };
         let speed = self.velocity.max(0.0);
-        self.pushes.push(Push::Kick { limb: id, x, speed: speed * LANDING_KICK * share });
-        let force = KITTY_WEIGHT * IMPACT_LOAD * (speed / TERMINAL_SPEED).powi(2) * (1.0 - IMPACT_SOFTEN * limb.give_at(x)) * share;
-        let fatigue = if braced { force * FATIGUE_SHARE } else { 0.0 };
-        self.pushes.push(Push::Jolt { limb: id, force, fatigue });
+        self.pushes.push(Push::Kick { limb: id, x, speed: speed * LANDING_KICK * share(braced) });
+        let force = KITTY_WEIGHT * IMPACT_LOAD * (speed / TERMINAL_SPEED).powi(2) * (1.0 - IMPACT_SOFTEN * limb.give_at(x)) * share(bounce);
+        let fatigue = if bounce { force * FATIGUE_SHARE } else { 0.0 };
+        self.pushes.push(Push::Jolt { limb: id, x, force, fatigue });
     }
 
     /// Standing at a tip that bends down and draws in under her, keep her inner paw on it, unless
     /// she's heading off the end anyway.
     fn hold_tip(&mut self, limb: &Limb) {
         let dir = limb.direction;
-        if limb.broken() || self.move_x * dir > 0.0 {
+        if limb.gave_way() || self.move_x * dir > 0.0 {
             return;
         }
-        let edge = limb.tip().x - dir * TIP_GRIP;
+        let edge = limb.end().x - dir * TIP_GRIP;
         if (self.x - dir * KITTY_FOOT_REACH - edge) * dir > 0.0 {
             self.x = edge + dir * KITTY_FOOT_REACH;
         }
@@ -627,6 +663,7 @@ impl Kitty {
         self.panicking = false;
         self.dropping = false;
         self.leapt = false;
+        self.leapt_from = None;
         self.coyote = 0;
         self.drop_through = None;
     }
@@ -636,7 +673,7 @@ impl Kitty {
     fn step_across(&self, limbs: &[Limb], from: LimbId) -> Option<(Support, f32)> {
         let feet = self.feet();
         (0..limbs.len())
-            .filter(|&id| id != from && !limbs[id].broken())
+            .filter(|&id| id != from && !limbs[id].gone())
             .filter_map(|id| limbs[id].surface_under(&feet).map(|s| (Support::Limb(id), s)))
             .filter(|&(_, s)| s >= self.y - STEP_ACROSS_UP && s <= self.y + LANDING_TOLERANCE)
             .min_by(|a, b| (a.1 - self.y).abs().total_cmp(&(b.1 - self.y).abs()))
@@ -650,7 +687,7 @@ impl Kitty {
         }
         let prev_top = self.prev_y - KITTY_BOX.1;
         for (id, limb) in limbs.iter().enumerate() {
-            if limb.broken() || Some(id) == self.released_from {
+            if limb.gone() || Some(id) == self.released_from {
                 continue;
             }
             let Some(s) = limb.surface_y(self.x) else { continue };
@@ -668,10 +705,12 @@ impl Kitty {
                 self.panicking = false;
                 self.dropping = false;
                 self.leapt = false;
+                self.leapt_from = None;
                 self.just_grabbed = true;
                 self.buffered = None;
                 if self.charge.take().is_some() {
                     self.climb_wait = Some(0);
+                    self.hold_carry = true;
                 }
                 self.y = s - GRIP_DEPTH + KITTY_BOX.1;
                 self.pushes.push(Push::Kick { limb: id, x: self.x, speed: GRAB_KICK });
@@ -683,12 +722,12 @@ impl Kitty {
     /// Haul up from hanging to standing, easing the box up past the branch.
     fn climb_step(&mut self, limbs: &[Limb], id: LimbId) -> Option<Support> {
         // Keep to the wood as a bending tip draws in
-        if !limbs[id].broken() {
+        if !limbs[id].fell_away(self.x) {
             let (lo, hi) = limbs[id].walk_range();
             self.x = self.x.clamp(lo, hi);
         }
         let Some(s) = limbs[id].surface_y(self.x) else {
-            self.let_go(limbs[id].broken());
+            self.let_go(limbs[id].gave_way());
             return None;
         };
         self.climb_step += 1;
@@ -741,6 +780,7 @@ impl Kitty {
         self.standing_on = None;
         self.falling = true;
         self.leapt = false;
+        self.leapt_from = None;
         self.dropping = false;
         self.coyote = 0;
         self.velocity = KNOCKBACK_HOP;

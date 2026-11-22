@@ -151,9 +151,13 @@ impl EventHandler for Recorder {
     }
 }
 
-/// The keyboard's jump key, with the same press/hold/release edges as the action finger.
+/// The keyboard's jump key, with the same press/hold/release edges as the action finger. Public
+/// so the tests can drive it.
 #[derive(Default)]
-struct Keys {
+pub struct Keys {
+    /// Every key down now. A key's auto-repeat (which Android sends as fresh presses, with no
+    /// repeat flag) is ignored until it's let go.
+    down: Vec<KeyCode>,
     jump_held: Vec<KeyCode>,
     /// The jump key was already down when the screen changed: it does nothing until let go.
     inert: bool,
@@ -166,9 +170,10 @@ struct Keys {
 }
 
 impl Keys {
-    fn event(&mut self, code: KeyCode, down: bool, repeat: bool) {
+    pub fn event(&mut self, code: KeyCode, down: bool, repeat: bool) {
         let jump_key = matches!(code, KeyCode::Space | KeyCode::Up | KeyCode::W);
         if !down {
+            self.down.retain(|&k| k != code);
             if jump_key && self.jump_held.contains(&code) {
                 self.jump_held.retain(|&k| k != code);
                 if self.jump_held.is_empty() {
@@ -178,9 +183,10 @@ impl Keys {
             }
             return;
         }
-        if repeat {
+        if repeat || self.down.contains(&code) {
             return;
         }
+        self.down.push(code);
         if jump_key && !self.jump_held.contains(&code) {
             self.press |= self.jump_held.is_empty() && !self.inert;
             self.jump_held.push(code);
@@ -197,25 +203,33 @@ impl Keys {
     }
 
     /// Keys held when the app was put away never send their release.
-    fn release_all(&mut self) {
+    pub fn release_all(&mut self) {
+        self.down.clear();
         self.jump_held.clear();
         self.inert = false;
     }
 
-    fn ignore_current(&mut self) {
+    pub fn ignore_current(&mut self) {
         self.inert = !self.jump_held.is_empty();
         self.press = false;
         self.leap = false;
         self.drop = false;
     }
 
+    /// This frame's controls from the keyboard, with walking read from the keys down now.
     fn take(&mut self) -> Controls {
         let left = is_key_down(KeyCode::Left) || is_key_down(KeyCode::A);
         let right = is_key_down(KeyCode::Right) || is_key_down(KeyCode::D);
         let walk = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         let speed = if walk { KEY_WALK_SPEED } else { 1.0 };
+        Controls { move_x: (right as i32 - left as i32) as f32 * speed, ..self.take_edges() }
+    }
+
+    /// This frame's presses, releases, drops and the rest (everything but walking), cleared for
+    /// the next.
+    pub fn take_edges(&mut self) -> Controls {
         let controls = Controls {
-            move_x: (right as i32 - left as i32) as f32 * speed,
+            move_x: 0.0,
             press: self.press,
             charge_held: !self.jump_held.is_empty() && !self.inert,
             leap: self.leap,
@@ -224,8 +238,8 @@ impl Keys {
             back: self.back,
             any_tap: self.any_tap,
         };
-        let (jump_held, inert) = (std::mem::take(&mut self.jump_held), self.inert);
-        *self = Keys { jump_held, inert, ..Keys::default() };
+        let (down, jump_held, inert) = (std::mem::take(&mut self.down), std::mem::take(&mut self.jump_held), self.inert);
+        *self = Keys { down, jump_held, inert, ..Keys::default() };
         controls
     }
 }
@@ -270,8 +284,13 @@ impl Input {
         self.touch.thresholds = Thresholds::new(self.px_per_mm() / view.scale);
         let now = date::now();
         self.touch.frame(now);
+        // A long gap since the last frame means the app was away without saying so (a browser
+        // tab just stops drawing): anything held then was let go where we couldn't see
+        let mut away = get_frame_time() >= AWAY_FRAME_TIME;
+        if away {
+            self.release_all();
+        }
         let dpi = screen_dpi_scale();
-        let mut away = false;
         for event in self.recorder.events.drain(..) {
             match event {
                 Raw::Touch { id, phase, x, y } => {
@@ -297,7 +316,13 @@ impl Input {
             back: keys.back,
             any_tap: keys.any_tap || fingers.any_tap,
         };
-        (controls, away || get_frame_time() >= AWAY_FRAME_TIME)
+        (controls, away)
+    }
+
+    /// The app went away: every finger and key is let go, without leaping.
+    fn release_all(&mut self) {
+        self.touch.release_all();
+        self.keys.release_all();
     }
 
     /// The screen changed: fingers and the jump key already down do nothing until let go.

@@ -74,9 +74,21 @@ pub struct Limb {
     give_reach: f32,
     give_base: f32,
     /// Strain left in the wood by hard, braced landings (bouncing on it), fading slowly. It counts
-    /// with the load toward snapping, so bouncing too hard again and again breaks a limb that no
-    /// single landing would.
+    /// with the next landing's jolt toward snapping, so bouncing too hard again and again breaks a
+    /// limb that no single landing would (but just standing or crouching on it never does).
     fatigue: f32,
+    /// Jolted since the last step.
+    jolted: bool,
+    /// Broken after the last step, to tell when it has just snapped.
+    was_broken: bool,
+    /// A sturdy limb that snapped partway along: the stub left on the tree is shorter and stiffer
+    /// and can't snap again.
+    pub stub: bool,
+    /// A fork whose parent snapped off between the trunk and the fork: none of it is left.
+    pub fallen: bool,
+    /// The walkable span as it was when the limb snapped, so things resting on it keep their
+    /// places on the stub (and those past the break go with the piece that fell).
+    snapped_span: Option<(f32, f32)>,
 }
 
 /// Measuring a limb's give: Kitty's weight this far along the walkable span, held this many
@@ -84,6 +96,25 @@ pub struct Limb {
 const GIVE_PROBE: f32 = 0.85;
 const GIVE_PROBE_STEPS: usize = 90;
 const GIVE_PROBE_AVERAGE: usize = 30;
+/// A snapped stub is still swinging: let a copy settle this many steps before measuring its give.
+const STUB_SETTLE_STEPS: usize = 90;
+
+/// An over-pumped sturdy limb breaks right under Kitty's paws, but the stub it leaves keeps at
+/// least the first share of its segments (so the level can still be climbed past it) and at most
+/// the second (so a real piece falls away).
+pub const STUB_SHARE: (f32, f32) = (0.6, 0.8);
+/// The stub's wood is this stiff (the springs' stiffness, of at most 1), so it barely gives, and
+/// dead: it takes only this share of a kick (a landing, a push-off), so it hardly springs back.
+const STUB_STIFFNESS: f32 = 1.0;
+const STUB_KICK: f32 = 0.15;
+
+/// The segments a sturdy limb of `segments` can break at (see `STUB_SHARE`): the stub keeps the
+/// segments up to there.
+pub fn stub_segments(segments: usize) -> (usize, usize) {
+    let lo = (STUB_SHARE.0 * segments as f32).ceil() as usize;
+    let hi = ((STUB_SHARE.1 * segments as f32) as usize).min(segments - 2);
+    (lo.min(segments - 2), hi.max(lo).min(segments - 2))
+}
 
 const FOLIAGE_GREEN: [&str; 6] = ["green_0", "green_1", "green_2", "green_3", "green_4", "green_5"];
 const FOLIAGE_AUTUMN: [&str; 6] = ["autumn_0", "autumn_1", "autumn_2", "autumn_3", "autumn_4", "autumn_5"];
@@ -97,9 +128,10 @@ impl Limb {
             spec.stiffness, spec.gnarl, spec.direction, spec.seed, spec.rise,
         );
         if spec.strength > 0.0 {
-            // Breaks right where it leaves the bark
+            // Thin wood breaks right where it leaves the bark; sturdy wood partway along (aimed
+            // under Kitty's paws as she lands; see `aim_break`)
             branch.strength = spec.strength;
-            branch.snap_distance = spec.trunk_half;
+            branch.snap_distance = if spec.thin { spec.trunk_half } else { (stub_segments(segments).0 as f32 + 0.5) * branch.segment_len };
         }
         let mut limb = Self {
             branch,
@@ -120,6 +152,11 @@ impl Limb {
             give_reach: 1.0,
             give_base: 0.0,
             fatigue: 0.0,
+            jolted: false,
+            was_broken: false,
+            stub: false,
+            fallen: false,
+            snapped_span: None,
         };
         limb.remember_surface();
         limb
@@ -138,8 +175,26 @@ impl Limb {
         self.branch.strength > 0.0
     }
 
+    /// Snapped (thin limbs at the trunk, sturdy ones partway along, leaving a stub).
     pub fn broken(&self) -> bool {
         self.branch.broken_at.is_some()
+    }
+
+    /// Snapped with nothing left to stand on: a thin limb snapped at the trunk, or a fork that fell
+    /// with its parent. (A sturdy limb's stub is still there.)
+    pub fn gone(&self) -> bool {
+        self.broken() && !self.stub
+    }
+
+    /// Whether the wood at `x` has fallen away: the limb snapped somewhere between there and the
+    /// trunk.
+    pub fn fell_away(&self, x: f32) -> bool {
+        self.broken() && !(self.stub && self.surface_y(x).is_some())
+    }
+
+    /// It snapped just now, or there's nothing of it left: whatever was on it falls in a panic.
+    pub fn gave_way(&self) -> bool {
+        self.just_snapped || self.gone()
     }
 
     /// 0 when unloaded, 1 at the point of snapping.
@@ -147,20 +202,94 @@ impl Limb {
         if self.breakable() { (self.branch.stress + self.fatigue) / self.branch.strength } else { 0.0 }
     }
 
-    /// A hard landing: a sudden extra load on top of the weight resting on the limb, of which
-    /// `fatigue` lingers in the wood.
-    pub fn jolt(&mut self, force: f32, fatigue: f32) {
+    /// A hard landing at `x`: a sudden extra load on top of the weight resting on the limb, of
+    /// which `fatigue` lingers in the wood. A sturdy limb that gives way now breaks under it.
+    pub fn jolt(&mut self, x: f32, force: f32, fatigue: f32) {
+        self.aim_break(x);
         self.branch.apply_jolt(force);
         self.fatigue += fatigue;
+        self.jolted = true;
+    }
+
+    /// Where a sturdy limb will break if it gives way: at the segment under `x`, kept within
+    /// `STUB_SHARE` of the limb so the stub left is long enough to use. Thin limbs always break at
+    /// the trunk.
+    fn aim_break(&mut self, x: f32) {
+        if self.thin || !self.breakable() || self.broken() {
+            return;
+        }
+        let n = self.segments();
+        let reach = (x - self.base().x) * self.direction;
+        let under = if reach <= 0.0 {
+            0
+        } else {
+            (0..n).find(|&i| (x - self.top_point(i + 1).x) * self.direction <= 0.0).unwrap_or(n - 1)
+        };
+        let (lo, hi) = stub_segments(n);
+        self.branch.snap_distance = (under.clamp(lo, hi) as f32 + 0.5) * self.branch.segment_len;
+    }
+
+    /// Snap it now: a thin limb at the trunk, a sturdy one at the segment under `x` (within
+    /// `STUB_SHARE`). The next `step` finishes the job, as for any snap.
+    pub fn snap_at(&mut self, x: f32) {
+        if self.breakable() && !self.broken() {
+            self.aim_break(x);
+            self.snapped_span = Some(self.walk_range());
+            self.branch.snap();
+        }
+    }
+
+    /// Its parent snapped off between the trunk and where it grows: it goes down with that piece.
+    pub fn fall_with_parent(&mut self) {
+        if !self.fallen {
+            self.fallen = true;
+            self.stub = false;
+            self.branch.strength = 0.0;
+            self.snapped_span = self.snapped_span.or(Some(self.walk_range()));
+            self.branch.snap();
+        }
+    }
+
+    /// Just snapped partway along: the stub left on the tree springs back stiffer, has little give
+    /// left, and never snaps again.
+    fn become_stub(&mut self) {
+        self.stub = true;
+        self.branch.strength = 0.0;
+        self.fatigue = 0.0;
+        if let Some(seg) = self.branch.broken_at {
+            let columns = self.segments() + 1;
+            for c in &mut self.branch.constraints {
+                if c.node_a % columns <= seg && c.node_b % columns <= seg {
+                    c.stiffness = STUB_STIFFNESS;
+                }
+            }
+        }
+        (self.give_measured, self.give_reach) = self.measure_give(STUB_SETTLE_STEPS);
     }
 
     /// Measure how far the limb sags with Kitty standing near its tip, on a copy so the level
     /// itself is untouched. `base_give` is what a fork's parent adds where the fork grows out.
     pub fn calibrate_give(&mut self, base_give: f32) {
+        (self.give_measured, self.give_reach) = self.measure_give(0);
+        self.give_base = base_give;
+    }
+
+    /// For a fork: its parent's give where it grows out, passed on (it changes if the parent is
+    /// left a stub).
+    pub fn set_base_give(&mut self, base_give: f32) {
+        self.give_base = base_give;
+    }
+
+    /// The give measured near the end of the walkable span (after letting a copy settle for
+    /// `settle` steps), and how far out from the base that was.
+    fn measure_give(&self, settle: usize) -> (f32, f32) {
         let (lo, hi) = self.walk_range();
         let x = if self.direction > 0.0 { lo + (hi - lo) * GIVE_PROBE } else { hi - (hi - lo) * GIVE_PROBE };
         let mut probe = self.clone();
         let mut rng = Rng::new(0x61FE);
+        for _ in 0..settle {
+            probe.step(0.0, 0.0, None, &mut rng);
+        }
         let rest = probe.surface_y(x).unwrap_or(0.0);
         let mut sag = 0.0;
         for step in 0..GIVE_PROBE_STEPS {
@@ -170,9 +299,7 @@ impl Limb {
                 sag += probe.surface_y(x).map_or(0.0, |y| y - rest) / GIVE_PROBE_AVERAGE as f32;
             }
         }
-        self.give_measured = sag.max(0.0) / FULL_GIVE_SAG;
-        self.give_reach = ((x - self.base().x) * self.direction).max(1.0);
-        self.give_base = base_give;
+        (sag.max(0.0) / FULL_GIVE_SAG, ((x - self.base().x) * self.direction).max(1.0))
     }
 
     /// How much the limb yields under Kitty at `x`, 0 (solid, by the trunk) to 1 (a whippy
@@ -201,17 +328,26 @@ impl Limb {
         // An overloaded limb trembles before it gives way
         gust += rng.range(-1.0, 1.0) * BRANCH_TREMBLE * (self.strain() - 0.5).max(0.0);
         self.branch.apply_force(0.0, gust);
-        let was_broken = self.broken();
+        let span = (!self.broken()).then(|| self.walk_range());
         self.branch.update_physics(BRANCH_SUB_STEPS, STEP, BRANCH_GRAVITY, BRANCH_DAMPING);
-        // The engine snaps a limb that's carrying too much; worn by bouncing, it gives out sooner
+        // The engine snaps a limb that's carrying too much; worn by bouncing, the next hard
+        // landing breaks it sooner
         self.fatigue *= 1.0 - STEP / FATIGUE_FADE;
-        if self.breakable() && !self.broken() && self.branch.stress + self.fatigue > self.branch.strength {
+        let jolted = std::mem::take(&mut self.jolted);
+        if jolted && self.breakable() && !self.broken() && self.branch.stress + self.fatigue > self.branch.strength {
             self.branch.snap();
         }
         if self.broken() {
             self.fatigue = 0.0;
         }
-        self.just_snapped = self.broken() && !was_broken;
+        self.just_snapped = self.broken() && !self.was_broken;
+        self.was_broken = self.broken();
+        if self.just_snapped {
+            self.snapped_span = self.snapped_span.or(span);
+            if !self.thin && !self.fallen {
+                self.become_stub();
+            }
+        }
     }
 
     fn remember_surface(&mut self) {
@@ -219,9 +355,14 @@ impl Limb {
         self.last_surface.extend(self.branch.nodes[..=self.branch.segments].iter().map(|n| n.pos.y));
     }
 
+    /// Segments still on the tree.
+    fn attached(&self) -> usize {
+        if self.fallen { 0 } else { self.branch.broken_at.unwrap_or(self.branch.segments) }
+    }
+
     /// How far the top surface under `x` moved down during the last step (negative = springing up).
     pub fn surface_velocity(&self, x: f32) -> f32 {
-        for i in 0..self.branch.segments {
+        for i in 0..self.attached() {
             let (a, b) = (self.top_point(i), self.top_point(i + 1));
             if a.x != b.x && (x - a.x) * (x - b.x) <= 0.0 {
                 let t = (x - a.x) / (b.x - a.x);
@@ -233,16 +374,18 @@ impl Limb {
         0.0
     }
 
+    /// The top surface at `x`, where the wood is still on the tree.
     pub fn surface_y(&self, x: f32) -> Option<f32> {
-        self.branch.surface_y(x)
+        if self.fallen { None } else { self.branch.surface_y(x) }
     }
 
     /// Highest point of the top surface under any of `xs`.
     pub fn surface_under(&self, xs: &[f32]) -> Option<f32> {
-        xs.iter().filter_map(|&x| self.branch.surface_y(x)).reduce(f32::min)
+        xs.iter().filter_map(|&x| self.surface_y(x)).reduce(f32::min)
     }
 
     pub fn kick(&mut self, x: f32, speed: f32) {
+        let speed = if self.stub { speed * STUB_KICK } else { speed };
         self.branch.apply_impulse(x, speed);
     }
 
@@ -264,15 +407,30 @@ impl Limb {
         self.top_point(self.branch.segments)
     }
 
+    /// The end of the wood still on the tree: the tip, or where a stub snapped off.
+    pub fn end(&self) -> Vec2 {
+        match self.branch.broken_at {
+            Some(seg) if self.stub => self.top_point(seg),
+            _ => self.tip(),
+        }
+    }
+
     pub fn segments(&self) -> usize {
         self.branch.segments
     }
 
-    /// x-extent something can walk along: from the trunk's bark to just short of the tip.
+    /// x-extent something can walk along: from the trunk's bark to just short of the end (of the
+    /// stub, once a sturdy limb has snapped).
     pub fn walk_range(&self) -> (f32, f32) {
         let a = self.base().x + self.direction * (self.trunk_half + 10.0);
-        let b = self.tip().x - self.direction * 10.0;
+        let b = self.end().x - self.direction * 10.0;
         (a.min(b), a.max(b))
+    }
+
+    /// The walkable span as it was before the limb snapped, for placing things along it that stay
+    /// put on the stub, or fall with the piece past the break.
+    pub fn whole_walk_range(&self) -> (f32, f32) {
+        self.snapped_span.unwrap_or_else(|| self.walk_range())
     }
 
     pub fn bounds(&self) -> Rect {
@@ -343,7 +501,10 @@ impl Limb {
     /// to tip, so a level limb is 0 whichever way it grows.
     fn angle_at(&self, i: usize) -> f32 {
         let n = self.segments();
-        let (a, b) = if i >= n { (self.top_point(n - 1), self.top_point(n)) } else { (self.top_point(i), self.top_point(i + 1)) };
+        let i = i.min(n);
+        // At an end (the tip, or where it snapped) along the last bit of wood before it
+        let end = i == n || self.branch.broken_at == Some(i);
+        let (a, b) = if end { (self.top_point(i - 1), self.top_point(i)) } else { (self.top_point(i), self.top_point(i + 1)) };
         let d = b - a;
         d.y.atan2(d.x * self.direction)
     }
@@ -784,7 +945,7 @@ impl WoodMesh {
 /// trunk's edge drawn across it.
 pub fn draw_roots(limbs: &[Limb], visible: impl Fn(&Limb) -> bool, grain: &Texture2D) {
     let mut mesh = WoodMesh::new(grain);
-    for limb in limbs.iter().filter(|l| l.attachment.is_none() && l.trunk_half > 0.0 && !l.broken() && visible(l)) {
+    for limb in limbs.iter().filter(|l| l.attachment.is_none() && l.trunk_half > 0.0 && !l.gone() && visible(l)) {
         // The root's first few columns are all the curve needs there
         let mut piece = limb.piece(0, limb.segments().min(3), End::Hidden, End::Hidden);
         piece.finish();

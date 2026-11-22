@@ -5,11 +5,12 @@
 use kitty_mobile::consts::*;
 use kitty_mobile::enemies::dog;
 use kitty_mobile::input::Controls;
+use kitty_mobile::items::{Item, ItemKind};
 use kitty_mobile::kitty::{Kitty, Support};
 use kitty_mobile::level;
-use kitty_mobile::limb::Limb;
+use kitty_mobile::limb::{stub_segments, Limb};
 use kitty_mobile::rng::Rng;
-use kitty_mobile::world::{breeze_at, build_limbs, load_limb, step_kitty, KittyStep};
+use kitty_mobile::world::{breeze_at, build_limbs, load_limb, step_kitty, step_limb, KittyStep};
 
 /// Limbs further above or below Kitty than this sit still in the tests.
 const NEAR: f32 = 900.0;
@@ -23,6 +24,8 @@ struct Sim {
     wind: f32,
     /// How many limbs (the first ones) are the level's path, bottom to top.
     path: usize,
+    /// The most strained the first limb has been while whole (cracks show past 0.5).
+    peak_strain: f32,
 }
 
 impl Sim {
@@ -31,7 +34,7 @@ impl Sim {
         let mut rng = Rng::new(seed ^ 0xC0FFEE);
         let limbs = build_limbs(&plan, &mut rng);
         let path = plan.branches.iter().take_while(|b| b.on_path).count();
-        Self { limbs, kitty: Kitty::new(WORLD_W / 2.0), rng, time: 0.0, wind: level::difficulty(level, 0).wind, path }
+        Self { limbs, kitty: Kitty::new(WORLD_W / 2.0), rng, time: 0.0, wind: level::difficulty(level, 0).wind, path, peak_strain: 0.0 }
     }
 
     /// Only branch `id` (not a fork), to watch Kitty and one limb with nothing else to land on.
@@ -48,9 +51,11 @@ impl Sim {
         // her, and leaving them be keeps these tests quick
         for i in 0..self.limbs.len() {
             if (self.limbs[i].base().y - self.kitty.y).abs() < NEAR {
-                let anchor = self.limbs[i].attachment.map(|a| self.limbs[a.parent].top_point(a.node));
-                self.limbs[i].step(breeze, self.time, anchor, &mut self.rng);
+                step_limb(&mut self.limbs, i, breeze, self.time, &mut self.rng);
             }
+        }
+        if let Some(first) = self.limbs.first().filter(|l| !l.broken()) {
+            self.peak_strain = self.peak_strain.max(first.strain());
         }
         step
     }
@@ -69,6 +74,19 @@ impl Sim {
         self.kitty.standing_on = Some(Support::Limb(limb));
         self.run(60, Controls::default());
         self.kitty.standing_on == Some(Support::Limb(limb))
+    }
+
+    /// Snap limb `id` as short as a snap can leave it, and let the stub settle and the piece that
+    /// broke off fall away.
+    fn snap_short(&mut self, id: usize) {
+        let base = self.limbs[id].base().x;
+        self.limbs[id].snap_at(base);
+        // Off the clock, so the leaps that follow fly in the same gusts as without the snap
+        for _ in 0..120 {
+            for i in 0..self.limbs.len() {
+                step_limb(&mut self.limbs, i, 0.0, self.time, &mut self.rng);
+            }
+        }
     }
 
     /// Hold the jump for `steps` steps, standing still, then let go.
@@ -125,6 +143,19 @@ fn along(limb: &Limb, f: f32) -> f32 {
     if limb.direction > 0.0 { lo + (hi - lo) * f } else { hi - (hi - lo) * f }
 }
 
+/// Kitty hanging halfway along limb `id` (alone), settled.
+fn hanging(base: &Sim, id: usize) -> Sim {
+    let mut sim = base.alone(id);
+    let x = along(&sim.limbs[0], 0.5);
+    sim.kitty = Kitty::new(x);
+    sim.kitty.standing_on = None;
+    sim.kitty.hanging_on = Some(0);
+    sim.kitty.y = sim.limbs[0].surface_y(x).unwrap() - GRIP_DEPTH + KITTY_BOX.1;
+    sim.run(30, Controls::default());
+    assert_eq!(sim.kitty.hanging_on, Some(0));
+    sim
+}
+
 /// Sturdy branches (not thin, not forks) well clear of the ground.
 fn sturdy_branches(sim: &Sim) -> Vec<usize> {
     (0..sim.limbs.len())
@@ -137,6 +168,7 @@ fn sturdy_branches(sim: &Sim) -> Vec<usize> {
 /// height above where she started and the landing that snapped the limb, if one did.
 fn bounce(sim: &mut Sim, spot: f32, bounces: usize) -> (Vec<f32>, Option<usize>) {
     let start = sim.kitty.y;
+    let intact = sim.limbs[0].branch.broken_at;
     let mut heights = Vec::new();
     sim.charge_and_leap(CHARGE_STEPS + 4);
     for landing in 0..=bounces {
@@ -151,7 +183,7 @@ fn bounce(sim: &mut Sim, spot: f32, bounces: usize) -> (Vec<f32>, Option<usize>)
             sim.step(c);
         }
         heights.push(start - top);
-        if sim.limbs[0].broken() {
+        if sim.limbs[0].branch.broken_at != intact {
             return (heights, Some(landing));
         }
         if sim.kitty.standing_on != Some(Support::Limb(0)) || landing == bounces {
@@ -171,7 +203,7 @@ fn bounce(sim: &mut Sim, spot: f32, bounces: usize) -> (Vec<f32>, Option<usize>)
         }
         sim.run(best.0, hold());
         sim.step(release());
-        if sim.limbs[0].broken() {
+        if sim.limbs[0].branch.broken_at != intact {
             return (heights, Some(landing));
         }
     }
@@ -266,14 +298,15 @@ fn well_timed_bounces_climb_higher() {
     assert!(third_higher * 100 >= limbs * 85, "only {third_higher} of {limbs} limbs climbed three bounces running");
 }
 
-/// Bouncing ever higher snaps even a sturdy limb, and only big bounces do.
+/// Bouncing ever higher snaps even a sturdy limb (not the goal, which never snaps), and only big
+/// bounces do. It cracks first, and breaks partway along, under her paws, leaving a stub.
 #[test]
 fn over_pumping_snaps_a_sturdy_limb() {
     let (mut snapped, mut pumped) = (0, 0);
     for level in [1, 3, 5] {
         for seed in 0..3 {
             let base = Sim::new(level, seed);
-            for id in sturdy_branches(&base) {
+            for id in sturdy_branches(&base).into_iter().filter(|&id| !base.limbs[id].is_goal) {
                 let spot = along(&base.limbs[id], 1.0);
                 if !(0.15..0.6).contains(&base.limbs[id].give_at(spot)) {
                     continue;
@@ -283,8 +316,13 @@ fn over_pumping_snaps_a_sturdy_limb() {
                 let (heights, broke) = bounce(&mut sim, spot, 12);
                 if let Some(landing) = broke {
                     snapped += 1;
-                    assert!(heights[landing] > 750.0, "level {level} seed {seed} limb {id} snapped landing from {:.0} px: {heights:?}",
-                            heights[landing]);
+                    let context = format!("level {level} seed {seed} limb {id}: {heights:?}");
+                    assert!(heights[landing] > 750.0, "{context} snapped landing from {:.0} px", heights[landing]);
+                    assert!(sim.peak_strain > 0.5, "{context} snapped without cracking first");
+                    let limb = &sim.limbs[0];
+                    let (n, seg) = (limb.segments(), limb.branch.broken_at.unwrap());
+                    assert!(limb.stub && !limb.breakable() && (stub_segments(n).0..=n - 2).contains(&seg),
+                            "{context} snapped at segment {seg} of {n} (stub {})", limb.stub);
                 }
                 // Three landings in a row from way up must have broken it
                 if heights.windows(3).any(|w| w.iter().all(|&h| h > 1000.0)) {
@@ -297,8 +335,84 @@ fn over_pumping_snaps_a_sturdy_limb() {
     assert!(snapped >= 5, "only {snapped} limbs snapped ({pumped} pumped high)");
 }
 
+/// An over-pumped sturdy limb snaps partway along its length: the stub left on the tree keeps
+/// more than half of it, Kitty can stand on it anywhere and leap from it as from solid wood, and
+/// it's stiff and dead, so bouncing on it gets nowhere, and it never snaps again however she
+/// bounces.
+#[test]
+fn an_over_pumped_limb_leaves_a_stub_to_stand_and_leap_on() {
+    let mut stubs = 0;
+    for level in [1, 3, 5] {
+        for seed in 0..3 {
+            let base = Sim::new(level, seed);
+            for id in sturdy_branches(&base).into_iter().filter(|&id| !base.limbs[id].is_goal) {
+                let spot = along(&base.limbs[id], 1.0);
+                if !(0.15..0.6).contains(&base.limbs[id].give_at(spot)) {
+                    continue;
+                }
+                let mut sim = base.alone(id);
+                assert!(sim.stand_on(0, spot));
+                if bounce(&mut sim, spot, 12).1.is_none() {
+                    continue;
+                }
+                sim.run(120, Controls::default());
+                let context = format!("level {level} seed {seed} limb {id}");
+                let limb = sim.limbs[0].clone();
+                let seg = limb.branch.broken_at.unwrap();
+                assert!(seg as f32 >= 0.55 * limb.segments() as f32, "{context}: stub of {seg} segments of {}", limb.segments());
+                let (lo, hi) = limb.walk_range();
+                assert!(limb.surface_y(lo).is_some() && limb.surface_y(hi).is_some(), "{context}: walk range off the stub");
+                assert!(limb.give_at(along(&limb, 1.0)) < 0.2, "{context}: the stub still gives {:.2}", limb.give_at(along(&limb, 1.0)));
+                for f in [0.0, 0.5, 1.0] {
+                    let mut sim = sim.clone();
+                    assert!(sim.stand_on(0, along(&limb, f)), "{context}: can't stand on the stub at {f}");
+                }
+                // A full leap from it, as from solid wood
+                let mut leap = sim.clone();
+                assert!(leap.stand_on(0, along(&limb, 0.5)));
+                let start = leap.kitty.y;
+                leap.charge_and_leap(CHARGE_STEPS + 4);
+                let height = start - leap.fly(None, 100);
+                assert!(height > 440.0, "{context}: only {height:.0} px from the stub");
+                // Bouncing on its end gets nowhere, and never snaps it
+                let end = along(&limb, 1.0);
+                assert!(sim.stand_on(0, end));
+                let (heights, broke) = bounce(&mut sim, end, 10);
+                assert!(broke.is_none() && sim.limbs[0].branch.broken_at == Some(seg) && sim.limbs[0].stub,
+                        "{context}: the stub snapped again ({heights:?})");
+                assert!(heights.iter().all(|&h| h < 600.0), "{context}: bounced on the stub {heights:?}");
+                stubs += 1;
+            }
+        }
+    }
+    assert!(stubs >= 5, "only {stubs} stubs");
+}
+
+/// The goal limb, with the friend's nest, never snaps, however hard Kitty bounces on it anywhere.
+#[test]
+fn the_goal_limb_never_snaps() {
+    let mut checked = 0;
+    for level in 1..=5 {
+        for seed in 0..4 {
+            let base = Sim::new(level, seed);
+            let goal = (0..base.limbs.len()).find(|&i| base.limbs[i].is_goal).unwrap();
+            assert!(!base.limbs[goal].breakable());
+            for f in [0.3, 0.6, 1.0] {
+                let mut sim = base.alone(goal);
+                let spot = along(&sim.limbs[0], f);
+                assert!(sim.stand_on(0, spot));
+                let (heights, broke) = bounce(&mut sim, spot, 15);
+                assert!(broke.is_none() && !sim.limbs[0].broken(), "level {level} seed {seed} at {f}: snapped the goal {heights:?}");
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked >= 60);
+}
+
 /// Sturdy limbs take what play throws at them: landings from a full leap braced or not, a long
-/// fall, and Kitty crouching with two dogs on it.
+/// fall relaxed or braced (holding the jump all the way down, which is no bounce), and Kitty
+/// crouching with two dogs on it.
 #[test]
 fn sturdy_limbs_hold_landings_and_dogs() {
     let mut checked = 0;
@@ -324,15 +438,22 @@ fn sturdy_limbs_hold_landings_and_dogs() {
                         sim.run(120, c);
                         assert!(!sim.limbs[0].broken(), "level {level} seed {seed} limb {id} at {f}: a full leap (braced {braced}) snapped it");
                     }
-                    // A long fall from high above, landing relaxed
-                    let mut sim = base.alone(id);
-                    sim.kitty = Kitty::new(spot);
-                    sim.kitty.standing_on = None;
-                    sim.kitty.falling = true;
-                    sim.kitty.y = sim.limbs[0].surface_y(spot).unwrap() - 1500.0;
-                    sim.fly(Some(spot), 300);
-                    sim.run(60, Controls::default());
-                    assert!(!sim.limbs[0].broken(), "level {level} seed {seed} limb {id} at {f}: a long fall snapped it");
+                    // A long fall from high above, landing relaxed, then braced
+                    for braced in [false, true] {
+                        let mut sim = base.alone(id);
+                        sim.kitty = Kitty::new(spot);
+                        sim.kitty.standing_on = None;
+                        sim.kitty.falling = true;
+                        sim.kitty.y = sim.limbs[0].surface_y(spot).unwrap() - 1500.0;
+                        let c = if braced { hold() } else { Controls::default() };
+                        sim.step(if braced { press() } else { c });
+                        while sim.kitty.airborne() {
+                            sim.step(Controls { move_x: steer(&sim.kitty, spot), ..c });
+                        }
+                        assert!(sim.kitty.standing_on == Some(Support::Limb(0)) && sim.kitty.crouching() == braced);
+                        sim.run(60, c);
+                        assert!(!sim.limbs[0].broken(), "level {level} seed {seed} limb {id} at {f}: a long fall (braced {braced}) snapped it");
+                    }
                     // Kitty crouched, and two dogs either side of her
                     let mut sim = base.alone(id);
                     assert!(sim.stand_on(0, spot));
@@ -351,7 +472,9 @@ fn sturdy_limbs_hold_landings_and_dogs() {
     assert!(checked > 50);
 }
 
-/// Thin limbs hold Kitty crouching anywhere and landing from a full leap, but not Kitty and a dog.
+/// Thin limbs hold Kitty crouching anywhere, landing from a full leap, and landing braced from a
+/// fall (that's no bounce), but not Kitty and a dog. A small bounce on one that holds as she
+/// lands holds while she crouches on after it.
 #[test]
 fn thin_limbs_hold_kitty_but_give_out_sooner() {
     let mut checked = 0;
@@ -378,6 +501,34 @@ fn thin_limbs_hold_kitty_but_give_out_sooner() {
                     }
                     if sim.kitty.standing_on == Some(Support::Limb(0)) {
                         assert!(sim.limbs[0].broken(), "level {level} seed {seed} limb {id} at {f}: held Kitty and a dog");
+                    }
+                    // Falling onto it from well above, braced all the way down
+                    let mut sim = base.alone(id);
+                    sim.kitty = Kitty::new(spot);
+                    sim.kitty.standing_on = None;
+                    sim.kitty.falling = true;
+                    sim.kitty.y = sim.limbs[0].surface_y(spot).unwrap() - 450.0;
+                    sim.step(press());
+                    while sim.kitty.airborne() {
+                        sim.step(Controls { move_x: steer(&sim.kitty, spot), ..hold() });
+                    }
+                    sim.run(200, hold());
+                    assert!(!sim.limbs[0].broken(), "level {level} seed {seed} limb {id} at {f}: a braced landing from a fall snapped it");
+                    // A part-charged hop straight up, held through the landing, then crouching on
+                    let mut sim = base.alone(id);
+                    assert!(sim.stand_on(0, spot));
+                    sim.charge_and_leap(12);
+                    while sim.kitty.velocity < 0.0 {
+                        sim.step(walk(steer(&sim.kitty, spot)));
+                    }
+                    sim.step(press());
+                    while sim.kitty.airborne() {
+                        sim.step(Controls { move_x: steer(&sim.kitty, spot), ..hold() });
+                    }
+                    sim.run(2, hold());
+                    if !sim.limbs[0].broken() && sim.kitty.crouching() {
+                        sim.run(400, hold());
+                        assert!(!sim.limbs[0].broken(), "level {level} seed {seed} limb {id} at {f}: crouching after a small bounce snapped it");
                     }
                     checked += 1;
                 }
@@ -578,17 +729,7 @@ fn swiping_or_a_hit_cancels_a_charge() {
 fn hanging_climbs_on_a_press_and_lets_go_on_a_swipe() {
     let base = Sim::new(1, 0);
     let id = sturdy_branches(&base)[0];
-    let hang = || {
-        let mut sim = base.alone(id);
-        let x = along(&sim.limbs[0], 0.5);
-        sim.kitty = Kitty::new(x);
-        sim.kitty.standing_on = None;
-        sim.kitty.hanging_on = Some(0);
-        sim.kitty.y = sim.limbs[0].surface_y(x).unwrap() - GRIP_DEPTH + KITTY_BOX.1;
-        sim.run(30, Controls::default());
-        assert_eq!(sim.kitty.hanging_on, Some(0));
-        sim
-    };
+    let hang = || hanging(&base, id);
     let mut sim = hang();
     sim.step(tap());
     assert_eq!(sim.kitty.climbing_on, Some(0));
@@ -621,6 +762,62 @@ fn hanging_climbs_on_a_press_and_lets_go_on_a_swipe() {
     sim.step(tap());
     let leapt = (0..12).any(|_| sim.step(Controls::default()).jumped);
     assert!(leapt, "a tap late in the climb was lost");
+}
+
+/// A press made early in a climb, and still held when she's nearly up, crouches her, and the
+/// release leaps, however soon after the tap it came; a quick second tap during the climb is let
+/// go first and still does nothing.
+#[test]
+fn a_press_held_through_a_climb_crouches_her_once_up() {
+    let base = Sim::new(1, 0);
+    let id = sturdy_branches(&base)[0];
+    for wait in [0, 2, 5, 8, 12, 14, 16, 17, 19, 25] {
+        let mut sim = hanging(&base, id);
+        sim.step(tap());
+        assert_eq!(sim.kitty.climbing_on, Some(0));
+        sim.run(wait, Controls::default());
+        sim.step(press());
+        sim.run(60, hold());
+        assert!(sim.kitty.crouching(), "pressed {wait} steps into the climb and held: not crouching");
+        assert!(sim.step(release()).jumped, "pressed {wait} steps into the climb: the release didn't leap");
+    }
+    let mut sim = hanging(&base, id);
+    sim.step(tap());
+    sim.run(5, Controls::default());
+    sim.step(tap());
+    let leapt = (0..60).any(|_| sim.step(Controls::default()).jumped);
+    assert!(!leapt && sim.kitty.standing_on == Some(Support::Limb(0)) && !sim.kitty.crouching(), "a double tap leapt");
+}
+
+/// Holding the jump to climb, or catching a branch with the jump still held from the air, she
+/// climbs and arrives crouched; letting go then leaps.
+#[test]
+fn holding_on_through_a_climb_crouches_her_on_arrival() {
+    let base = Sim::new(1, 0);
+    let id = sturdy_branches(&base)[0];
+    let mut sim = hanging(&base, id);
+    sim.step(press());
+    sim.run(80, hold());
+    assert!(sim.kitty.standing_on == Some(Support::Limb(0)) && sim.kitty.crouching(), "held to climb: not crouching on arrival");
+    assert!(sim.step(release()).jumped, "held to climb: the release didn't leap");
+
+    // Falling just short of the branch with the jump held
+    let mut sim = base.alone(id);
+    let x = along(&sim.limbs[0], 0.5);
+    let s = sim.limbs[0].surface_y(x).unwrap();
+    sim.kitty = Kitty::new(x);
+    sim.kitty.standing_on = None;
+    sim.kitty.falling = true;
+    sim.kitty.y = s + 60.0;
+    sim.step(press());
+    let grabbed = (0..30).any(|_| {
+        sim.step(hold());
+        sim.kitty.hanging_on.is_some() || sim.kitty.climbing_on.is_some()
+    });
+    assert!(grabbed, "didn't catch the branch");
+    sim.run(80, hold());
+    assert!(sim.kitty.standing_on == Some(Support::Limb(0)) && sim.kitty.crouching(), "caught it charged: not crouching once up");
+    assert!(sim.step(release()).jumped, "caught it charged: the release didn't leap");
 }
 
 /// Catching a low limb, hanging while it sags, then letting go: the ground always catches her.
@@ -696,6 +893,99 @@ fn walking_down_a_fork_steps_onto_its_parent() {
     assert!(walked > 50, "only {walked} walk-offs: the test isn't exercising forks");
 }
 
+/// A fork whose parent snaps off between the trunk and the fork goes down too: Kitty standing on
+/// it falls (she doesn't ride it down out of the world) and what rested on it goes. A fork left on
+/// the parent's stub stays, with Kitty on it.
+#[test]
+fn a_fork_goes_down_with_its_parent() {
+    let (mut fell, mut stayed) = (0, 0);
+    for level in 1..=5 {
+        for seed in 0..4 {
+            let base = Sim::new(level, seed);
+            for fork in (0..base.limbs.len()).filter(|&i| base.limbs[i].attachment.is_some()) {
+                let attachment = base.limbs[fork].attachment.unwrap();
+                let parent = attachment.parent;
+                let context = format!("level {level} seed {seed} fork {fork}");
+                let mut sim = base.clone();
+                if !sim.stand_on(fork, along(&base.limbs[fork], 0.7)) {
+                    continue;
+                }
+                let gold = Item::new(ItemKind::Gold, fork, 0.8, 0.0);
+                // Snapped just inside the fork
+                let mut inside = sim.clone();
+                let branch = &mut inside.limbs[parent].branch;
+                branch.snap_distance = (attachment.node as f32 - 0.5) * branch.segment_len;
+                branch.snap();
+                inside.run(300, Controls::default());
+                let limb = &inside.limbs[fork];
+                assert!(limb.gone() && limb.surface_y(along(&base.limbs[fork], 0.5)).is_none(), "{context}: still there");
+                assert!(gold.position(&inside.limbs, 0.0).is_none(), "{context}: the gold stayed in the air");
+                assert!(inside.kitty.standing_on != Some(Support::Limb(fork)) && inside.kitty.y <= GROUND_Y + 0.5,
+                        "{context}: rode it down to y {:.0} on {:?}", inside.kitty.y, inside.kitty.standing_on);
+                fell += 1;
+                // Snapped as short as it can, which leaves most forks on the stub
+                let mut short = sim.clone();
+                let at = short.limbs[parent].base().x;
+                short.limbs[parent].snap_at(at);
+                short.run(120, Controls::default());
+                if short.limbs[parent].branch.broken_at.unwrap() >= attachment.node {
+                    assert!(!short.limbs[fork].broken() && short.kitty.standing_on == Some(Support::Limb(fork)),
+                            "{context}: a fork on the stub went down");
+                    assert!(gold.position(&short.limbs, 0.0).is_some(), "{context}: the gold on a fork on the stub went");
+                    stayed += 1;
+                }
+            }
+        }
+    }
+    assert!(fell > 20 && stayed > 20, "only {fell} forks fell and {stayed} stayed");
+}
+
+/// Leaps from nine spots along limb `from` (or the ground under limb `to`), steered toward limb
+/// `to`: which of `charges` (steps of crouching, tried in order) first lands one on a path branch
+/// at or above `to` (or a fork growing from one), if any does. Each spot is tried with four aims:
+/// the nearest end of the target, or across it, in case another branch overhead is in the way.
+fn leap_to(base: &Sim, from: Option<usize>, to: usize, charges: &[u32]) -> Option<u32> {
+    let target = &base.limbs[to];
+    let (tlo, thi) = target.walk_range();
+    let spots: Vec<f32> = match from {
+        None => (0..9).map(|k| (tlo - 120.0 + (thi - tlo + 240.0) * k as f32 / 8.0).clamp(60.0, WORLD_W - 60.0)).collect(),
+        Some(id) => (0..9).map(|k| along(&base.limbs[id], k as f32 / 8.0)).collect(),
+    };
+    // Kitty settled at each spot, worked out as they're needed
+    let mut standing: Vec<Option<Option<Sim>>> = vec![None; spots.len()];
+    let mut lands = |charge: u32| (0..spots.len()).any(|k| {
+        let x = spots[k];
+        let settled = standing[k].get_or_insert_with(|| {
+            let mut sim = base.clone();
+            match from {
+                Some(id) => sim.stand_on(id, x).then_some(sim),
+                None => {
+                    sim.kitty = Kitty::new(x);
+                    Some(sim)
+                }
+            }
+        });
+        let Some(sim) = settled else { return false };
+        let mut sim = sim.clone();
+        sim.step(press());
+        sim.run(charge as usize - 1, hold());
+        let nearest = sim.kitty.x.clamp(tlo + 20.0, thi - 20.0);
+        [nearest, along(target, 0.15), along(target, 0.5), along(target, 0.85)].into_iter().any(|aim| {
+            let mut leap = sim.clone();
+            leap.step(release());
+            leap.fly(Some(aim), 400);
+            let Some(Support::Limb(on)) = leap.kitty.standing_on else { return false };
+            let branch = leap.limbs[on].attachment.map_or(on, |a| a.parent);
+            branch >= to && branch < leap.path
+        })
+    });
+    charges.iter().copied().find(|&charge| lands(charge))
+}
+
+/// A full charge, then lighter ones for where another branch hangs low over the target and a full
+/// leap would sail up onto that instead.
+const CHARGES: [u32; 4] = [CHARGE_STEPS + 1, 22, 16, 12];
+
 /// Every level can be climbed without bouncing: from somewhere on each path branch (and the
 /// ground), one charged leap, steered toward somewhere on the next path branch, lands on it (or
 /// on one further up the path, or a fork growing from one, where those are right overhead). A
@@ -708,48 +998,11 @@ fn every_path_branch_is_one_leap_from_the_last() {
         for seed in 0..4 {
             let base = Sim::new(level, seed);
             for to in 0..base.path {
-                let target = &base.limbs[to];
-                let (tlo, thi) = target.walk_range();
-                let spots: Vec<(Option<usize>, f32)> = if to == 0 {
-                    (0..9).map(|k| (None, (tlo - 120.0 + (thi - tlo + 240.0) * k as f32 / 8.0).clamp(60.0, WORLD_W - 60.0))).collect()
-                } else {
-                    (0..9).map(|k| (Some(to - 1), along(&base.limbs[to - 1], k as f32 / 8.0))).collect()
-                };
-                // Kitty settled at each spot, worked out as they're needed
-                let mut standing: Vec<Option<Option<Sim>>> = vec![None; spots.len()];
-                let mut lands = |charge: u32| (0..spots.len()).any(|k| {
-                    let (from, x) = spots[k];
-                    let settled = standing[k].get_or_insert_with(|| {
-                        let mut sim = base.clone();
-                        match from {
-                            Some(id) => sim.stand_on(id, x).then_some(sim),
-                            None => {
-                                sim.kitty = Kitty::new(x);
-                                Some(sim)
-                            }
-                        }
-                    });
-                    let Some(sim) = settled else { return false };
-                    let mut sim = sim.clone();
-                    sim.step(press());
-                    sim.run(charge as usize - 1, hold());
-                    // Aim for the nearest end of the target, or across it, in case another branch
-                    // overhead is in the way
-                    let nearest = sim.kitty.x.clamp(tlo + 20.0, thi - 20.0);
-                    [nearest, along(target, 0.15), along(target, 0.5), along(target, 0.85)].into_iter().any(|aim| {
-                        let mut leap = sim.clone();
-                        leap.step(release());
-                        leap.fly(Some(aim), 400);
-                        let Some(Support::Limb(on)) = leap.kitty.standing_on else { return false };
-                        let branch = leap.limbs[on].attachment.map_or(on, |a| a.parent);
-                        branch >= to && branch < leap.path
-                    })
-                });
-                if lands(CHARGE_STEPS + 1) {
+                let charge = leap_to(&base, to.checked_sub(1), to, &CHARGES);
+                assert!(charge.is_some(), "level {level} seed {seed}: no leap from path branch {} reaches {to}", to as isize - 1);
+                if charge == Some(CHARGES[0]) {
                     full += 1;
                 } else {
-                    assert!([22, 16, 12].into_iter().any(&mut lands),
-                            "level {level} seed {seed}: no leap from path branch {} reaches {to}", to as isize - 1);
                     lighter += 1;
                 }
             }
@@ -758,4 +1011,42 @@ fn every_path_branch_is_one_leap_from_the_last() {
     // Lighter charges are the exception
     println!("{full} path branches take a full charge, {lighter} a lighter one");
     assert!(lighter * 10 <= full, "{lighter} path branches need a lighter charge, {full} take a full one");
+}
+
+/// Snapping a sturdy path branch leaves a stub long enough that the level can still be climbed
+/// without bouncing: whichever one snaps, as short as a snap can leave it, one charged leap from
+/// the branch below still lands on the stub (or higher up the path), and one from the stub lands
+/// on the next branch (or higher). As for the whole branches, a full charge does it nearly
+/// everywhere, and a lighter one where a full leap would sail up onto something overhead.
+#[test]
+fn every_path_branch_is_one_leap_past_a_stub() {
+    let cases: Vec<(usize, u64)> = (1..=5).flat_map(|level| (0..4).map(move |seed| (level, seed))).collect();
+    let results: Vec<(usize, usize)> = std::thread::scope(|scope| {
+        let runs: Vec<_> = cases.iter().map(|&(level, seed)| scope.spawn(move || {
+            let base = Sim::new(level, seed);
+            let (mut full, mut lighter) = (0, 0);
+            for k in (0..base.path - 1).filter(|&k| !base.limbs[k].thin) {
+                let mut sim = base.clone();
+                sim.snap_short(k);
+                let stub = &sim.limbs[k];
+                assert!(stub.stub && stub.branch.broken_at == Some(stub_segments(stub.segments()).0));
+                let up = leap_to(&sim, k.checked_sub(1), k, &CHARGES);
+                assert!(up.is_some(), "level {level} seed {seed}: no leap from path branch {} reaches the stub of {k}", k as isize - 1);
+                let on = leap_to(&sim, Some(k), k + 1, &CHARGES);
+                assert!(on.is_some(), "level {level} seed {seed}: no leap from the stub of path branch {k} reaches {}", k + 1);
+                for charge in [up, on] {
+                    if charge == Some(CHARGES[0]) {
+                        full += 1;
+                    } else {
+                        lighter += 1;
+                    }
+                }
+            }
+            (full, lighter)
+        })).collect();
+        runs.into_iter().map(|run| run.join().unwrap()).collect()
+    });
+    let (full, lighter) = results.iter().fold((0, 0), |(f, l), r| (f + r.0, l + r.1));
+    println!("past stubs: {full} leaps take a full charge, {lighter} a lighter one");
+    assert!(lighter * 10 <= full, "{lighter} leaps past stubs need a lighter charge, {full} take a full one");
 }

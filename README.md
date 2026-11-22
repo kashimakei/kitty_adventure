@@ -111,12 +111,12 @@ snarl, a rear, a screech), and only teeth, beaks, claws and acorns hurt.
 
 - **Charge up.** The longer Kitty crouches, the higher she pounces: the ring at her feet fills
   up, and sparkles when she's ready for her biggest leap. A quick tap is a little hop.
-- **Hang on.** Fall just short of a branch and Kitty catches it by the paws; tap to climb up, or
-  swipe down to let go.
+- **Hang on.** Fall just short of a branch and Kitty catches it by the paws; tap the right half to
+  climb up, or swipe down there to let go.
 - **Bounce.** Branches spring like trampolines. Keep holding as Kitty lands and let go as the ring
   glows blue: she rides the rebound higher, and each well-timed bounce goes higher still.
 - **But not too high.** Bounce too hard and even a sturdy branch snaps, though it cracks and
-  trembles first.
+  trembles first. Its end breaks off, leaving a stiff stub that holds Kitty but won't bounce.
 - **Mind the thin ones.** Pale, young branches hold Kitty or a dog, but snap under both, or
   under a bounce from a big leap.
 - **Drop through.** Swipe down (or press ↓) while standing on a branch to drop through it to the

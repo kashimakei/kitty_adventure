@@ -231,7 +231,7 @@ pub async fn run() {
                 set_camera(&view.screen_camera());
                 story::draw_level_intro(&assets, game.level, &story::level_info(game.level), game.screen_time,
                                         input.is_touch());
-                if controls.any_tap && game.screen_time > 0.5 {
+                if controls.any_tap && game.screen_time > story::level_intro_wait(game.level) {
                     accumulator = 0.0;
                     game.go(Screen::Playing);
                 }

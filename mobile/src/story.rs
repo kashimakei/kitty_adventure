@@ -570,6 +570,17 @@ fn page_art(assets: &Assets, art: &PageArt, r: Rect, t: f32, time: f32, alpha: f
     }
 }
 
+/// When the level-one how-to-play card starts to fade in on the level intro, and how long it
+/// takes to come in fully.
+pub const BASICS_CARD_IN: (f32, f32) = (0.7, 0.5);
+
+/// How long the level intro waits before a tap moves on (and the prompt shows). On level one it
+/// waits until the how-to-play card is fully in: that card is the only place the controls are
+/// taught, and a quick tapper would otherwise skip it before it appeared.
+pub fn level_intro_wait(level: usize) -> f32 {
+    if level == 1 { BASICS_CARD_IN.0 + BASICS_CARD_IN.1 + 0.1 } else { 0.5 }
+}
+
 /// `touch` picks how the level-one card explains the controls: gestures, or keys.
 pub fn draw_level_intro(assets: &Assets, level: usize, info: &LevelInfo, time: f32, touch: bool) {
     let t = ambient_time();
@@ -623,14 +634,14 @@ pub fn draw_level_intro(assets: &Assets, level: usize, info: &LevelInfo, time: f
     let (sprites, frame) = info.threat.icon(assets);
     let y = tip_card(y, &format!("Watch out: {}", info.threat.name()), info.threat.tip(), tip_in,
                      |at| fit_sprite_centred(sprites, frame, at, 88.0, -1.0, fade(WHITE, tip_in)));
-    let more_in = appear(time, 0.7, 0.5);
+    let more_in = appear(time, BASICS_CARD_IN.0, BASICS_CARD_IN.1);
     if first {
         basics_card(assets, y + 16.0 + (1.0 - more_in) * 30.0, more_in, touch);
     } else {
         friends_progress(assets, level, (y + 1094.0) / 2.0 + (1.0 - more_in) * 30.0, t, more_in);
     }
 
-    if time > 0.6 {
+    if time > level_intro_wait(level).max(0.6) {
         tap_prompt("Tap to climb!", 1128.0, t);
     }
 }
@@ -652,7 +663,7 @@ fn basics_card(assets: &Assets, top: f32, alpha: f32, touch: bool) {
         [
             "Slide a thumb on the left side to walk, and further to run.",
             "Hold the right side to crouch, let go to pounce. Hold longer to leap higher!",
-            "Fall past a branch to grab it. Tap to climb up, swipe down to let go or drop through.",
+            "Fall past a branch to grab it. Tap the right side to climb up; swipe down there to let go or drop through.",
         ]
     } else {
         [
@@ -665,7 +676,7 @@ fn basics_card(assets: &Assets, top: f32, alpha: f32, touch: bool) {
         (TipIcon::Run, controls[0]),
         (TipIcon::Pounce, controls[1]),
         (TipIcon::Hang, controls[2]),
-        (TipIcon::Snap, "Thin pale branches hold you or a dog, but snap under both!"),
+        (TipIcon::Snap, "Thin pale branches hold you or a dog, but snap under both, or under a big bounce!"),
         (TipIcon::Treats, "Fish treats give points (golden ones give more), and hearts heal."),
     ];
     let layout = IconRows { icon_x: 76.0, text_x: 124.0, text_w: 440.0, size: 22.0, gap: 8.0 };
@@ -957,7 +968,7 @@ pub fn draw_paused(assets: &Assets, time: f32, touch: bool) {
         [
             (Legend::Slide, "Slide a thumb on the left side to walk; further to run."),
             (Legend::Hold, "Hold the right side to crouch, let go to leap. Hanging? Tap to climb."),
-            (Legend::Swipe, "Swipe down to let go of a branch or drop through it."),
+            (Legend::Swipe, "Swipe down on the right side to let go of a branch or drop through it."),
             (Legend::Bounce, bounce),
         ]
     } else {
@@ -1643,5 +1654,20 @@ pub mod paint {
         x = x.wrapping_mul(0x297A_2D39);
         x ^= x >> 15;
         x as f32 / u32::MAX as f32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A quick tapper can't leave the first level's intro before the how-to-play card is fully in;
+    /// later levels move on as soon as before.
+    #[test]
+    fn the_first_intro_waits_for_the_how_to_play_card() {
+        assert!(level_intro_wait(1) >= BASICS_CARD_IN.0 + BASICS_CARD_IN.1);
+        for level in 2..=5 {
+            assert_eq!(level_intro_wait(level), 0.5);
+        }
     }
 }

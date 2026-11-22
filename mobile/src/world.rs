@@ -281,8 +281,13 @@ impl World {
 
     fn step_limbs(&mut self) {
         step_limbs(&mut self.limbs, self.breeze, self.time, &mut self.rng);
+        let mut snapped = false;
         for limb in self.limbs.iter().filter(|l| l.just_snapped) {
-            self.sfx.push(Sfx::Snap);
+            // One crack, even if a fork goes down with its parent
+            if !snapped {
+                self.sfx.push(Sfx::Snap);
+                snapped = true;
+            }
             self.effects.shake_leaves(limb.tip(), 6, &mut self.rng);
         }
     }
@@ -447,8 +452,15 @@ pub fn build_limbs(plan: &LevelPlan, rng: &mut Rng) -> Vec<Limb> {
             gnarl: b.gnarl,
             rise: 0.0,
             // The plan only sets a strength for thin branches; sturdy ones are far stronger but
-            // can still be snapped by bouncing on them too hard
-            strength: if b.strength > 0.0 { b.strength } else { STURDY_BRANCH_STRENGTH * KITTY_WEIGHT },
+            // can still be snapped by bouncing on them too hard. The goal, with the friend's nest,
+            // never snaps.
+            strength: if b.goal {
+                0.0
+            } else if b.strength > 0.0 {
+                b.strength
+            } else {
+                STURDY_BRANCH_STRENGTH * KITTY_WEIGHT
+            },
             thin: b.strength > 0.0,
             tree: b.tree,
             trunk_half: half,
@@ -495,12 +507,31 @@ pub fn build_limbs(plan: &LevelPlan, rng: &mut Rng) -> Vec<Limb> {
 }
 
 /// One physics step for every limb. Parents come before their forks, so forks follow where the
-/// parent is now.
+/// parent is now. A fork goes down with its parent if that snapped off between the trunk and
+/// the fork; one left on a stub stays, its base giving no more than the stub does now.
 pub fn step_limbs(limbs: &mut [Limb], breeze: f32, time: f32, rng: &mut Rng) {
     for i in 0..limbs.len() {
-        let anchor = limbs[i].attachment.map(|a| limbs[a.parent].top_point(a.node));
-        limbs[i].step(breeze, time, anchor, rng);
+        step_limb(limbs, i, breeze, time, rng);
     }
+}
+
+/// One physics step for limb `i` (after its parent, if it's a fork).
+pub fn step_limb(limbs: &mut [Limb], i: LimbId, breeze: f32, time: f32, rng: &mut Rng) {
+    let mut anchor = None;
+    if let Some(a) = limbs[i].attachment {
+        let parent = &limbs[a.parent];
+        let at = parent.top_point(a.node);
+        let fell = parent.fallen || parent.branch.broken_at.is_some_and(|seg| seg < a.node);
+        let base_give = (parent.just_snapped && !fell).then(|| parent.give_at(at.x) * FORK_LOAD_SHARE);
+        if fell {
+            limbs[i].fall_with_parent();
+        }
+        if let Some(give) = base_give {
+            limbs[i].set_base_give(give);
+        }
+        anchor = Some(at);
+    }
+    limbs[i].step(breeze, time, anchor, rng);
 }
 
 /// What a step of Kitty did that the world makes sounds and leaves fly for.
@@ -538,17 +569,19 @@ pub fn apply_pushes(limbs: &mut [Limb], pushes: Vec<Push>) -> Vec<Vec2> {
                     }
                 }
             }
-            Push::Jolt { limb, force, fatigue } => jolt_limb(limbs, limb, force, fatigue),
+            Push::Jolt { limb, x, force, fatigue } => jolt_limb(limbs, limb, x, force, fatigue),
         }
     }
     shakes
 }
 
-/// A hard landing's jolt; like weight, a fork passes most of it on to its parent.
-pub fn jolt_limb(limbs: &mut [Limb], limb: LimbId, force: f32, fatigue: f32) {
-    limbs[limb].jolt(force, fatigue);
-    if let Some(Attachment { parent, .. }) = limbs[limb].attachment {
-        limbs[parent].jolt(force * FORK_LOAD_SHARE, fatigue * FORK_LOAD_SHARE);
+/// A hard landing's jolt at `x`; like weight, a fork passes most of it on to its parent (where
+/// it grows out).
+pub fn jolt_limb(limbs: &mut [Limb], limb: LimbId, x: f32, force: f32, fatigue: f32) {
+    limbs[limb].jolt(x, force, fatigue);
+    if let Some(Attachment { parent, node }) = limbs[limb].attachment {
+        let px = limbs[parent].top_point(node).x;
+        limbs[parent].jolt(px, force * FORK_LOAD_SHARE, fatigue * FORK_LOAD_SHARE);
     }
 }
 

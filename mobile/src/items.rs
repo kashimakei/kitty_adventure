@@ -21,10 +21,11 @@ impl Item {
         Self { kind, limb, frac, taken: false, bob_phase }
     }
 
-    /// Where it hovers now, or None if its part of the limb has fallen away.
+    /// Where it hovers now, or None if its part of the limb has fallen away. (On a snapped limb's
+    /// stub it keeps its place along the limb as it was.)
     pub fn position(&self, limbs: &[Limb], time: f32) -> Option<Vec2> {
         let limb = &limbs[self.limb];
-        let (lo, hi) = limb.walk_range();
+        let (lo, hi) = limb.whole_walk_range();
         let x = if limb.direction > 0.0 { lo + (hi - lo) * self.frac } else { hi - (hi - lo) * self.frac };
         let surface = limb.surface_y(x)?;
         let bob = (time * 3.0 + self.bob_phase).sin() * 3.0;

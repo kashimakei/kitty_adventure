@@ -2,9 +2,9 @@
 //! `input::Input` replays them each frame.
 
 use kitty_mobile::input::touch::{Gestures, Phase, Recogniser, Thresholds, MOUSE_ID};
-use kitty_mobile::input::{Controls, Pending, Raw, Recorder};
+use kitty_mobile::input::{Controls, Keys, Pending, Raw, Recorder};
 use macroquad::math::{vec2, Vec2};
-use macroquad::miniquad::{EventHandler, MouseButton};
+use macroquad::miniquad::{EventHandler, KeyCode, MouseButton};
 
 /// 10 playfield units per mm: dead zone 15, full speed 150, swipe 70.
 fn recogniser() -> Recogniser {
@@ -441,4 +441,57 @@ fn edges_wait_for_the_next_physics_step() {
     let held = Controls { charge_held: true, ..Controls::default() };
     let step = pending.take(&held);
     assert!(step.drop && step.charge_held && !step.press);
+}
+
+/// Android sends a held key's auto-repeat as fresh presses with no repeat flag: each key acts once
+/// until it's let go, so holding Down drops through one branch and holding P doesn't flicker the
+/// pause.
+#[test]
+fn a_held_key_acts_once_however_it_repeats() {
+    let mut keys = Keys::default();
+    for (code, pauses) in [(KeyCode::Down, false), (KeyCode::S, false), (KeyCode::P, true), (KeyCode::Escape, true)] {
+        let acted = |c: &Controls| if pauses { c.pause } else { c.drop };
+        keys.event(code, true, false);
+        assert!(acted(&keys.take_edges()), "{code:?}");
+        for repeat in [false, true, false, false] {
+            keys.event(code, true, repeat);
+            assert!(!acted(&keys.take_edges()), "{code:?} repeating (flag {repeat})");
+        }
+        keys.event(code, false, false);
+        keys.event(code, true, false);
+        assert!(acted(&keys.take_edges()), "{code:?} pressed again");
+        keys.event(code, false, false);
+    }
+    // The jump key: one press, held through the repeats, one leap
+    keys.event(KeyCode::Space, true, false);
+    let c = keys.take_edges();
+    assert!(c.press && c.charge_held && !c.leap);
+    for _ in 0..4 {
+        keys.event(KeyCode::Space, true, false);
+        let c = keys.take_edges();
+        assert!(!c.press && c.charge_held && !c.leap);
+    }
+    keys.event(KeyCode::Space, false, false);
+    let c = keys.take_edges();
+    assert!(c.leap && !c.charge_held && !c.press);
+}
+
+/// When the app goes away (minimized, or a hidden tab's long gap between frames), held keys are
+/// let go without a leap: their release, if it ever arrives, does nothing, and pressing them
+/// again on return works at once.
+#[test]
+fn keys_held_when_the_app_goes_away_are_let_go() {
+    let mut keys = Keys::default();
+    keys.event(KeyCode::Space, true, false);
+    keys.event(KeyCode::Down, true, false);
+    keys.take_edges();
+    keys.release_all();
+    let c = keys.take_edges();
+    assert!(!c.charge_held && !c.leap);
+    keys.event(KeyCode::Space, false, false);
+    assert!(!keys.take_edges().leap, "a release after going away leapt");
+    keys.event(KeyCode::Space, true, false);
+    keys.event(KeyCode::Down, true, false);
+    let c = keys.take_edges();
+    assert!(c.press && c.charge_held && c.drop, "{c:?}");
 }

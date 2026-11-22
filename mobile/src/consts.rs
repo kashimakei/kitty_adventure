@@ -70,9 +70,11 @@ pub const PUSH_KICK: f32 = 0.3;
 pub const SURFACE_CARRY: f32 = 1.0;
 pub const LANDING_KICK: f32 = 0.3;
 pub const RELAXED_LANDING: f32 = 0.4;
-/// A braced landing at terminal speed on solid wood jolts a limb with this many times Kitty's
-/// weight (scaled by the square of the speed); give softens it by up to `IMPACT_SOFTEN`. A share
-/// of a braced landing's jolt lingers as fatigue in the wood, fading over `FATIGUE_FADE` seconds.
+/// A bounce (landing braced back on the limb she leapt from) at terminal speed on solid wood jolts
+/// it with this many times Kitty's weight (scaled by the square of the speed); any other landing,
+/// braced or not, jolts it with `RELAXED_LANDING` of that. Give softens it by up to
+/// `IMPACT_SOFTEN`. A share of a bounce's jolt lingers as fatigue in the wood, fading over
+/// `FATIGUE_FADE` seconds, and adds to the next landing's jolt.
 pub const IMPACT_LOAD: f32 = 3.0;
 pub const IMPACT_SOFTEN: f32 = 0.5;
 pub const FATIGUE_SHARE: f32 = 0.12;
@@ -133,7 +135,8 @@ pub const BRANCH_THIN_DEPTH: (f32, f32) = (22.0, 26.0);
 pub const THIN_BRANCH_CHANCE: f32 = 0.3;
 pub const THIN_BRANCH_STRENGTH: (f32, f32) = (1.15, 1.3);
 /// Sturdy branches and forks (x Kitty's weight): Kitty and two dogs stand on one safely, but
-/// bouncing on it too hard snaps it.
+/// bouncing on it too hard snaps it partway along, leaving a stub (see `limb::STUB_SHARE`). The
+/// goal limb never snaps.
 pub const STURDY_BRANCH_STRENGTH: f32 = 3.0;
 pub const MAX_BRANCH_GAP: f32 = 360.0;
 pub const MAX_BRANCH_HOP: f32 = 150.0;

@@ -12,10 +12,10 @@ bindings), and the art and sounds come from `../assets`.
 
 Controls: on a phone, slide a thumb on the left half to walk and run (the further, the faster),
 hold the right half to crouch and let go to pounce (a tap hops, or climbs up when hanging), and
-swipe down to let go of a branch or drop through it; the II button or Back pauses. On a keyboard,
+swipe down there to let go of a branch or drop through it; the II button or Back pauses. On a keyboard,
 arrows or A/D to run (Shift walks), hold and release Space/Up/W to pounce, Down/S to let go or
 drop through, Esc/P to pause. Branches bounce: hold through a landing and let go as the ring at
-Kitty's feet glows blue to go higher, but bounce too high and the branch snaps.
+Kitty's feet glows blue to go higher, but bounce too high and the end of the branch snaps off.
 
 ## Building
 

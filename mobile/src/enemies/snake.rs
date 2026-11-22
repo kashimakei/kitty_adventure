@@ -204,7 +204,7 @@ impl Enemy for Snake {
             self.pos.x = lo + (hi - lo) * self.frac;
             self.coil(ctx);
         }
-        if limb.broken() {
+        if limb.fell_away(self.pos.x) {
             self.fall(Vec2::ZERO);
             return;
         }
