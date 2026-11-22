@@ -44,8 +44,8 @@ up there, and reach the friend waiting in a nest at the top.
     <td align="center" width="33%"><img src="docs/images/level-intro.jpg" width="250" alt="Level intro"><br><sub>Sunny needs help</sub></td>
   </tr>
   <tr>
-    <td align="center" width="33%"><img src="docs/images/climbing.jpg" width="250" alt="Climbing past a squirrel and a snake"><br><sub>Squirrel and snake</sub></td>
-    <td align="center" width="33%"><img src="docs/images/crow-and-snakes.jpg" width="250" alt="A crow overhead and snakes coiled on the branches"><br><sub>Crow and snakes</sub></td>
+    <td align="center" width="33%"><img src="docs/images/charging.jpg" width="250" alt="Kitty crouched on a branch charging a pounce, the ring at her feet sparkling, with a crow at the nest and snakes below"><br><sub>Charging a pounce</sub></td>
+    <td align="center" width="33%"><img src="docs/images/pounce.jpg" width="250" alt="Kitty leaping toward Sunny's nest past a coiled snake"><br><sub>Pounce!</sub></td>
     <td align="center" width="33%"><img src="docs/images/level-clear.jpg" width="250" alt="Level clear tally"><br><sub>Mochi is home!</sub></td>
   </tr>
 </table>
