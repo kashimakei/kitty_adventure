@@ -16,8 +16,8 @@ pub const WORLD_W: f32 = VIEW_W * WORLD_SCREENS;
 pub const GROUND_Y: f32 = 0.0;
 pub const GROUND_DEPTH: f32 = 160.0;
 
-// Camera: Kitty roams the middle of the screen before it pans; the bottom strip holds the
-// touch buttons, so the camera keeps Kitty above it.
+// Camera: Kitty roams the middle of the screen before it pans; on a phone, thumbs slide and hold
+// over the bottom strip, so the camera keeps Kitty above it.
 pub const CAMERA_DEADZONE_X: f32 = 0.35;
 pub const CAMERA_TOP_MARGIN: f32 = 0.33;
 pub const CAMERA_BOTTOM_MARGIN: f32 = 0.66;

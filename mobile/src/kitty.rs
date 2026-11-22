@@ -106,10 +106,12 @@ const RING_RADII: (f32, f32) = (40.0, 11.0);
 const RING_BACK: f32 = 16.0;
 const RING_WIDTH: f32 = 4.0;
 const RING_PIECES: usize = 48;
-const RING_TRACK: Color = Color::new(1.0, 1.0, 1.0, 0.22);
-const RING_FILL: Color = Color::new(1.0, 0.8, 0.3, 0.9);
-const RING_FULL: Color = Color::new(1.0, 0.62, 0.2, 1.0);
-const RING_SWEET: Color = Color::new(0.72, 0.98, 1.0, 1.0);
+/// Its colours (shared with the pictures on the how-to-play and pause cards): the empty track,
+/// filling, fully charged, and glowing while a release would ride the branch's rebound.
+pub const RING_TRACK: Color = Color::new(1.0, 1.0, 1.0, 0.22);
+pub const RING_FILL: Color = Color::new(1.0, 0.8, 0.3, 0.9);
+pub const RING_FULL: Color = Color::new(1.0, 0.62, 0.2, 1.0);
+pub const RING_SWEET: Color = Color::new(0.72, 0.98, 1.0, 1.0);
 
 /// Whether limbs `a` and `b` are one piece of wood: the same limb, or a fork and its parent.
 fn joined(limbs: &[Limb], a: LimbId, b: LimbId) -> bool {

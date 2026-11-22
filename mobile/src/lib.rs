@@ -229,7 +229,8 @@ pub async fn run() {
             }
             Screen::LevelIntro => {
                 set_camera(&view.screen_camera());
-                story::draw_level_intro(&assets, game.level, &story::level_info(game.level), game.screen_time);
+                story::draw_level_intro(&assets, game.level, &story::level_info(game.level), game.screen_time,
+                                        input.is_touch());
                 if controls.any_tap && game.screen_time > 0.5 {
                     accumulator = 0.0;
                     game.go(Screen::Playing);
@@ -283,7 +284,7 @@ pub async fn run() {
                 let world = game.world.as_ref().unwrap();
                 world.draw(&assets, &view, 1.0);
                 set_camera(&view.screen_camera());
-                story::draw_paused(game.screen_time);
+                story::draw_paused(&assets, game.screen_time, input.is_touch());
                 if (controls.pause || controls.back || controls.any_tap) && game.screen_time > 0.3 {
                     accumulator = 0.0;
                     game.go(Screen::Playing);

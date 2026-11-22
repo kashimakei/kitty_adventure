@@ -51,7 +51,8 @@ const PERCH_CHANCE: f32 = 0.45;
 /// Limb tips it considers landing on: this far ahead (px), within this much height of it.
 const PERCH_AHEAD: (f32, f32) = (40.0, 380.0);
 const PERCH_HEIGHT: f32 = 320.0;
-/// It won't pick a perch this close to Kitty, or under the score bar or the touch buttons.
+/// It won't pick a perch this close to Kitty, or under the score bar or low down where thumbs
+/// cover the screen.
 const PERCH_CLEARANCE: f32 = 170.0;
 const PERCH_VIEW_TOP: f32 = 160.0;
 const PERCH_VIEW_BOTTOM: f32 = 260.0;

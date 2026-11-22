@@ -10,8 +10,12 @@ The same code runs on desktop, in the browser (wasm) and on Android. The branche
 physics as the pygame original in the repository root (`Engines/`, built here without its Python
 bindings), and the art and sounds come from `../assets`.
 
-Controls: arrows or A/D to walk, Space/Up/W to jump (hold for higher), Down/S to let go of a
-branch, Esc/P to pause; on a phone, the on-screen buttons.
+Controls: on a phone, slide a thumb on the left half to walk and run (the further, the faster),
+hold the right half to crouch and let go to pounce (a tap hops, or climbs up when hanging), and
+swipe down to let go of a branch or drop through it; the II button or Back pauses. On a keyboard,
+arrows or A/D to run (Shift walks), hold and release Space/Up/W to pounce, Down/S to let go or
+drop through, Esc/P to pause. Branches bounce: hold through a landing and let go as the ring at
+Kitty's feet glows blue to go higher, but bounce too high and the branch snaps.
 
 ## Building
 
@@ -21,7 +25,7 @@ branch, Esc/P to pause; on a phone, the on-screen buttons.
 ./build.sh android    # build a debug APK: android/app/build/outputs/apk/debug/kitty-adventure-debug.apk
 ./build.sh install    # build it, install it on the phone connected over adb and start it
 ./build.sh assets     # just stage the art and sounds
-cargo test --release  # checks that generated levels are climbable
+cargo test --release  # levels are climbable, Kitty's physics, touch gestures, enemies, saves
 ```
 
 Every target first stages the art and sounds the game uses from `../assets` into `assets/`
@@ -73,9 +77,11 @@ targeting API 35. You can open it in Android Studio after running `./build.sh as
   links with 16 KB page alignment, which phones with 16 KB memory pages (Android 15+) need.
 - **The Java glue** is miniquad's own: `MainActivity` (package `com.kashimakei.kittyadventure`) is
   miniquad 0.4.11's `java/MainActivity.java` template filled in the way `cargo-quad-apk` does,
-  plus immersive fullscreen and camera-cutout handling. `QuadNative` must stay in package
-  `quad_native`, since the Rust side exports `Java_quad_1native_QuadNative_*`. When updating
-  miniquad, diff its `java/` folder against these two files.
+  plus immersive fullscreen, camera-cutout handling, `pixelsPerMm()` (so the Rust side can size
+  touch gestures in millimetres) and a Back-gesture exclusion on the bottom 200 dp of each side
+  edge, where thumbs slide and hold. `QuadNative` must stay in package `quad_native`, since the
+  Rust side exports `Java_quad_1native_QuadNative_*`. When updating miniquad, diff its `java/`
+  folder against these two files.
 - **The assets** come straight from `mobile/assets`.
 - **The launcher icons** are made from `../assets/kitty.png` by `android/make_icons.py` (needs
   Pillow); the PNGs are committed.
@@ -90,12 +96,17 @@ mobile/
     lib.rs          screens (title, story, levels, pause, game over) and the fixed 60 Hz loop
     world.rs        one level: trees, Kitty, enemies, items, collisions, drawing
     level.rs        level generation and difficulty per level and lap
-    kitty.rs        Kitty's movement and animation
+    kitty.rs        Kitty: walking, the charge jump, bouncing, hanging, dropping, animation
     limb.rs tree.rs branches (wrapping the Engines/ physics) and trunks
     enemies/        squirrel, snake, crow, dog, eagle
     camera.rs       the 600x1200 playfield letterboxed to any screen, and the camera
     sprites.rs      sprite frames, anchors and pixel-accurate hit masks from assets/
-    input.rs hud.rs story.rs audio.rs save.rs items.rs effects.rs rng.rs consts.rs
+    input/          keyboard, mouse and touch turned into controls; touch.rs has the gestures
+                    (slider, hold and release, swipe down) as pure logic the tests drive
+    platform.rs     Android hooks over JNI (screen density, going to the background)
+    hud.rs story.rs audio.rs save.rs items.rs effects.rs parallax.rs rng.rs consts.rs
+  tests/            physics.rs (Kitty's jumps on the branches, and that every level can be
+                    climbed with single leaps), touch.rs (gestures), squirrel.rs
   web/              index.html and macroquad's JS loader for the web build
   android/          the Gradle project
     app/build.gradle.kts            app settings and the cargo-ndk build

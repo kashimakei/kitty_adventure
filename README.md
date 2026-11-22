@@ -31,9 +31,9 @@ best friends right up into the treetops. In the morning, five little voices are 
 the tallest trees. They're much too small to climb down by themselves, so Kitty fluffs up her
 tail, looks up, up, up... and starts climbing.
 
-Every level is a stretch of forest three screens wide. Hop from branch to branch (they bend and
-spring under Kitty's weight, and the thin ones snap), dodge the critters that live up there, and
-reach the friend waiting in a nest at the top.
+Every level is a stretch of forest three screens wide. Pounce from branch to branch (they bend
+and bounce under Kitty like trampolines, and snap if pushed too far), dodge the critters that live
+up there, and reach the friend waiting in a nest at the top.
 
 ## Screens
 
@@ -103,14 +103,24 @@ snarl, a rear, a screech), and only teeth, beaks, claws and acorns hurt.
 
 | | On a phone | On a keyboard |
 |---|---|---|
-| Walk | the ‹ › buttons | ← → or A D |
-| Jump (hold to jump higher) | the ^ button | Space, ↑ or W |
-| Let go of a branch | the v button | ↓ or S |
+| Walk and run | slide a thumb on the left half: the further, the faster | ← → or A D (hold Shift to walk) |
+| Jump | hold the right half to crouch, let go to pounce | hold Space, ↑ or W, let go to pounce |
+| Climb up when hanging | tap the right half | Space, ↑ or W |
+| Let go, or drop through a branch | swipe down on the right half | ↓ or S |
 | Pause | the II button, or Back | Esc or P |
 
-- **Hang on.** Fall just short of a branch and Kitty catches it by the paws; jump again to climb up.
-- **Spring off.** Jumping just as a branch bounces back up launches Kitty higher.
-- **Mind the thin ones.** Pale, young branches hold Kitty or a dog, but snap under both.
+- **Charge up.** The longer Kitty crouches, the higher she pounces: the ring at her feet fills
+  up, and sparkles when she's ready for her biggest leap. A quick tap is a little hop.
+- **Hang on.** Fall just short of a branch and Kitty catches it by the paws; tap to climb up, or
+  swipe down to let go.
+- **Bounce.** Branches spring like trampolines. Keep holding as Kitty lands and let go as the ring
+  glows blue: she rides the rebound higher, and each well-timed bounce goes higher still.
+- **But not too high.** Bounce too hard and even a sturdy branch snaps, though it cracks and
+  trembles first.
+- **Mind the thin ones.** Pale, young branches hold Kitty or a dog, but snap under both, or
+  under a bounce from a big leap.
+- **Drop through.** Swipe down (or press ↓) while standing on a branch to drop through it to the
+  one below.
 - **Snack along the way.** Fish treats are worth points, golden fish more, and hearts top Kitty up.
   Kitty has three hearts and three lives.
 - **Be quick and careful.** Each rescue scores 1000, plus a time bonus and a bonus for not getting
@@ -118,7 +128,10 @@ snarl, a rear, a screech), and only teeth, beaks, claws and acorns hurt.
 
 ## Features
 
-- Soft-body branches simulated in Rust: they sag, wobble, fork and snap.
+- Soft-body branches simulated in Rust: they sag, wobble, fork and snap, and Kitty can bounce
+  on them like trampolines.
+- Touch controls made for thumbs: a floating slider to walk and run, hold and release to pounce,
+  swipe down to drop.
 - Five story levels with their own friend and threat, then endless rounds that get wilder.
 - Three-screen-wide levels with a minimap, and layered parallax scenery: clouds, misty
   mountains, a river valley and a forest that slip away as Kitty climbs.
@@ -137,7 +150,7 @@ cd mobile
                       # then serve it: python3 -m http.server -d dist 8000
 ./build.sh android    # build a debug APK (needs the Android SDK, NDK and cargo-ndk)
 ./build.sh install    # build it, install it on a phone over adb and start it
-cargo test --release  # level, physics, squirrel and high-score tests
+cargo test --release  # level, physics, touch, squirrel and high-score tests
 ```
 
 [`mobile/README.md`](mobile/README.md) has the prerequisites, phone setup and how the Android app

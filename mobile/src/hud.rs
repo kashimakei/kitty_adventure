@@ -1,7 +1,7 @@
 //! The heads-up display along the top: hearts, lives, the level and score, the five friends, and a
 //! minimap of the world's width showing the view, Kitty and where her friend is waiting, plus a
-//! slim meter of how far up she has climbed. Drawn in playfield coordinates, clear of the pause
-//! button (top right) and the touch buttons (bottom).
+//! slim meter of how far up she has climbed. Drawn in playfield coordinates along the top, clear
+//! of the pause button (top right) and of the lower screen, where thumbs slide and hold.
 
 use macroquad::prelude::*;
 

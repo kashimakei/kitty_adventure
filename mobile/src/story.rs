@@ -3,11 +3,12 @@
 //! screens live here, along with the drawing helpers (`paint`) they share with the HUD. Every
 //! draw function works in playfield coordinates (the screen camera).
 
-use std::f32::consts::TAU;
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use macroquad::prelude::*;
 
 use crate::consts::*;
+use crate::kitty::{RING_FILL, RING_FULL, RING_SWEET, RING_TRACK};
 use crate::sprites::{Assets, Sprites};
 use paint::*;
 
@@ -127,7 +128,7 @@ impl Threat {
     pub fn tip(self) -> &'static str {
         match self {
             Threat::Squirrels => "Cheeky squirrels toss acorns from the branches. Dodge them, or bop the squirrel from above!",
-            Threat::Dogs => "Dogs patrol the ground and leap up at low branches. Climb high to stay out of reach!",
+            Threat::Dogs => "Dogs patrol the ground and leap up at low branches. Bounce out of reach: hold as you land, let go as the ring glows blue!",
             Threat::Snakes => "Snakes lie coiled on branches and strike when you come close. Hop over them, or bop them on the head!",
             Threat::Crows => "Crows flap overhead and dive beak-first! When one hovers, step aside just in time.",
             Threat::Eagles => "Eagles sweep in fast from the edge of the sky. Keep moving and dodge their dive!",
@@ -569,7 +570,8 @@ fn page_art(assets: &Assets, art: &PageArt, r: Rect, t: f32, time: f32, alpha: f
     }
 }
 
-pub fn draw_level_intro(assets: &Assets, level: usize, info: &LevelInfo, time: f32) {
+/// `touch` picks how the level-one card explains the controls: gestures, or keys.
+pub fn draw_level_intro(assets: &Assets, level: usize, info: &LevelInfo, time: f32, touch: bool) {
     let t = ambient_time();
     backdrop(assets, Mood::Day);
     let first = level == 1;
@@ -623,7 +625,7 @@ pub fn draw_level_intro(assets: &Assets, level: usize, info: &LevelInfo, time: f
                      |at| fit_sprite_centred(sprites, frame, at, 88.0, -1.0, fade(WHITE, tip_in)));
     let more_in = appear(time, 0.7, 0.5);
     if first {
-        basics_card(assets, y + 16.0 + (1.0 - more_in) * 30.0, more_in);
+        basics_card(assets, y + 16.0 + (1.0 - more_in) * 30.0, more_in, touch);
     } else {
         friends_progress(assets, level, (y + 1094.0) / 2.0 + (1.0 - more_in) * 30.0, t, more_in);
     }
@@ -636,52 +638,117 @@ pub fn draw_level_intro(assets: &Assets, level: usize, info: &LevelInfo, time: f
 /// The pictures beside the level-one tips.
 #[derive(Clone, Copy)]
 enum TipIcon {
-    Stomp,
-    Treats,
-    Snap,
+    Run,
+    Pounce,
     Hang,
+    Snap,
+    Treats,
 }
 
-/// The level-one card of how-to-play tips, each with a little picture.
-fn basics_card(assets: &Assets, top: f32, alpha: f32) {
+/// The level-one card: the controls (as gestures on a touch screen, keys otherwise) and a couple
+/// of tips, each with a little picture. Bopping critters is on the squirrel card just above it.
+fn basics_card(assets: &Assets, top: f32, alpha: f32, touch: bool) {
+    let controls = if touch {
+        [
+            "Slide a thumb on the left side to walk, and further to run.",
+            "Hold the right side to crouch, let go to pounce. Hold longer to leap higher!",
+            "Fall past a branch to grab it. Tap to climb up, swipe down to let go or drop through.",
+        ]
+    } else {
+        [
+            "Run with the arrow keys or A and D, or hold Shift as well to walk.",
+            "Hold Space to crouch, let go to pounce. Hold longer to leap higher!",
+            "Fall past a branch to grab it. Space climbs up; Down lets go or drops through.",
+        ]
+    };
     let rows = [
-        (TipIcon::Stomp, "Jump on squirrels, snakes and crows from above to bop them."),
-        (TipIcon::Treats, "Fish treats give points (golden ones give more), and hearts heal."),
+        (TipIcon::Run, controls[0]),
+        (TipIcon::Pounce, controls[1]),
+        (TipIcon::Hang, controls[2]),
         (TipIcon::Snap, "Thin pale branches hold you or a dog, but snap under both!"),
-        (TipIcon::Hang, "Fall past a branch to grab it. Jump to climb up, down to let go."),
+        (TipIcon::Treats, "Fish treats give points (golden ones give more), and hearts heal."),
     ];
-    let (size, spacing, text_w) = (22.0, 1.3, 440.0);
-    let heights: Vec<f32> = rows.iter()
-        .map(|(_, s)| (wrap(s, size, text_w).len() as f32 * size * spacing).max(54.0))
-        .collect();
-    let r = Rect::new(24.0, top, 552.0, 60.0 + heights.iter().map(|h| h + 8.0).sum::<f32>());
+    let layout = IconRows { icon_x: 76.0, text_x: 124.0, text_w: 440.0, size: 22.0, gap: 8.0 };
+    let r = Rect::new(24.0, top, 552.0, 68.0 + layout.height(&rows));
     panel(r, 24.0, alpha);
     shadowed("How to play", r.x + 24.0, r.y + 38.0, 25.0, fade(LEAF_TEXT, alpha), Align::Left);
-    let mut y = r.y + 56.0;
     let white = fade(WHITE, alpha);
-    for ((icon, line), h) in rows.iter().zip(&heights) {
-        let at = vec2(r.x + 52.0, y + h / 2.0);
-        match icon {
-            TipIcon::Stomp => {
-                fit_sprite_centred(&assets.squirrel, "hurt_0", at + vec2(2.0, 14.0), 36.0, 1.0, white);
-                fit_sprite_centred(&assets.kitty, "land_1", at + vec2(0.0, -10.0), 44.0, 1.0, white);
-            }
-            TipIcon::Treats => {
-                assets.items.draw_ex("fish_1", at + vec2(-12.0, -10.0), 1.0, 0.65, -0.3, white);
-                assets.items.draw_ex("gold_0", at + vec2(12.0, 2.0), 1.0, 0.65, 0.2, white);
-                assets.items.draw_ex("heart_0", at + vec2(-10.0, 16.0), 1.0, 0.6, 0.0, white);
-            }
-            TipIcon::Snap => fit_sprite_centred(&assets.foliage, "twig_1", at, 54.0, 1.0, white),
-            TipIcon::Hang => fit_sprite_centred(&assets.kitty, "dangle_0", at, 58.0, 1.0, white),
+    layout.draw(&rows, r.y + 56.0, alpha, |icon, at| match icon {
+        TipIcon::Run => fit_sprite_centred(&assets.kitty, "run_1", at, 60.0, 1.0, white),
+        TipIcon::Pounce => crouched_on_ring(assets, at, RING_FILL, alpha),
+        TipIcon::Hang => fit_sprite_centred(&assets.kitty, "dangle_0", at, 58.0, 1.0, white),
+        TipIcon::Snap => fit_sprite_centred(&assets.foliage, "twig_1", at, 54.0, 1.0, white),
+        TipIcon::Treats => {
+            assets.items.draw_ex("fish_1", at + vec2(-12.0, -10.0), 1.0, 0.65, -0.3, white);
+            assets.items.draw_ex("gold_0", at + vec2(12.0, 2.0), 1.0, 0.65, 0.2, white);
+            assets.items.draw_ex("heart_0", at + vec2(-10.0, 16.0), 1.0, 0.6, 0.0, white);
         }
-        let lines = wrap(line, size, text_w);
-        let block = lines.len() as f32 * size * spacing;
-        let mut ty = y + (h - block) / 2.0 + size * 0.95;
-        for l in &lines {
-            text(l, r.x + 100.0, ty, size, fade(CREAM, alpha), Align::Left);
-            ty += size * spacing;
+    });
+}
+
+/// Rows of a little picture beside wrapped text, as on the how-to-play and pause cards: the
+/// picture centred at `icon_x`, the text from `text_x` (both in playfield x).
+#[derive(Clone, Copy)]
+struct IconRows {
+    icon_x: f32,
+    text_x: f32,
+    text_w: f32,
+    size: f32,
+    /// Space between rows.
+    gap: f32,
+}
+
+impl IconRows {
+    const LINE_SPACING: f32 = 1.3;
+    /// Rows are at least this tall, so the pictures don't crowd each other.
+    const MIN_HEIGHT: f32 = 54.0;
+
+    fn row_height(self, line: &str) -> f32 {
+        (wrap(line, self.size, self.text_w).len() as f32 * self.size * Self::LINE_SPACING).max(Self::MIN_HEIGHT)
+    }
+
+    /// The height of all the rows together.
+    fn height<T>(self, rows: &[(T, &str)]) -> f32 {
+        rows.iter().map(|(_, line)| self.row_height(line) + self.gap).sum::<f32>() - self.gap
+    }
+
+    /// Draw the rows from `top`; `icon` draws a row's picture centred on the point it's given.
+    fn draw<T: Copy>(self, rows: &[(T, &str)], top: f32, alpha: f32, icon: impl Fn(T, Vec2)) {
+        let mut y = top;
+        for &(kind, line) in rows {
+            let h = self.row_height(line);
+            icon(kind, vec2(self.icon_x, y + h / 2.0));
+            let lines = wrap(line, self.size, self.text_w);
+            let block = lines.len() as f32 * self.size * Self::LINE_SPACING;
+            let mut ty = y + (h - block) / 2.0 + self.size * 0.95;
+            for l in &lines {
+                text(l, self.text_x, ty, self.size, fade(CREAM, alpha), Align::Left);
+                ty += self.size * Self::LINE_SPACING;
+            }
+            y += h + self.gap;
         }
-        y += h + 8.0;
+    }
+}
+
+/// Kitty crouched to pounce, centred on `at`, with a full charge ring at her feet.
+fn crouched_on_ring(assets: &Assets, at: Vec2, ring: Color, alpha: f32) {
+    // As in play, the ring sits under her haunches, a little behind her middle
+    charge_ring(at + vec2(-6.0, 12.0), 1.0, ring, alpha);
+    fit_sprite_centred(&assets.kitty, "crouch_2", at - vec2(0.0, 4.0), 70.0, 1.0, fade(WHITE, alpha));
+}
+
+/// A small copy of the charge ring at Kitty's feet, `filled` (0..1) of the way round from the
+/// front either way, as it fills in play.
+fn charge_ring(centre: Vec2, filled: f32, color: Color, alpha: f32) {
+    const PIECES: usize = 32;
+    let (rx, ry) = (26.0, 7.0);
+    let point = |angle: f32| centre + vec2(rx * angle.cos(), ry * angle.sin());
+    for k in 0..PIECES {
+        let (a, b) = (k as f32 / PIECES as f32 * TAU, (k + 1) as f32 / PIECES as f32 * TAU);
+        let round = (((a + b) / 2.0 - FRAC_PI_2 + PI).rem_euclid(TAU) - PI).abs() / PI;
+        let piece = if round <= filled { color } else { RING_TRACK };
+        let (p, q) = (point(a), point(b));
+        draw_line(p.x, p.y, q.x, q.y, 3.0, fade(piece, alpha));
     }
 }
 
@@ -868,29 +935,109 @@ pub fn draw_life_lost(lives_left: u32, time: f32) {
     shadowed("Get ready...", 300.0, r.bottom() + 50.0, 26.0, fade(CREAM, ready), Align::Center);
 }
 
-pub fn draw_paused(time: f32) {
+/// The pictures beside the pause card's reminders: gestures on a touch screen, keys otherwise.
+#[derive(Clone, Copy)]
+enum Legend {
+    Slide,
+    Hold,
+    Swipe,
+    ArrowKeys,
+    SpaceKey,
+    DownKey,
+    Bounce,
+}
+
+/// Paused, with a reminder of the controls (gestures if `touch`, keys otherwise) and the bounce.
+pub fn draw_paused(assets: &Assets, time: f32, touch: bool) {
     let t = ambient_time();
     let dim = appear(time, 0.0, 0.2);
     draw_rectangle(0.0, 0.0, VIEW_W, VIEW_H, Color::new(0.03, 0.05, 0.08, 0.6 * dim));
-    let r = Rect::new(70.0, 360.0, 460.0, 420.0);
+    let bounce = "Hold as you land, let go as the ring glows blue: bounce higher! Too high and branches snap.";
+    let rows = if touch {
+        [
+            (Legend::Slide, "Slide a thumb on the left side to walk; further to run."),
+            (Legend::Hold, "Hold the right side to crouch, let go to leap. Hanging? Tap to climb."),
+            (Legend::Swipe, "Swipe down to let go of a branch or drop through it."),
+            (Legend::Bounce, bounce),
+        ]
+    } else {
+        [
+            (Legend::ArrowKeys, "Run, or A and D. Shift walks."),
+            (Legend::SpaceKey, "Hold to crouch, let go to leap or climb up. Up and W work too."),
+            (Legend::DownKey, "Let go of a branch or drop through it. S works too."),
+            (Legend::Bounce, bounce),
+        ]
+    };
+    let layout = IconRows { icon_x: 112.0, text_x: 180.0, text_w: 352.0, size: 22.0, gap: 10.0 };
+    // The title above the rows, and the tap prompt below them
+    let h = 124.0 + layout.height(&rows) + 106.0;
+    let r = Rect::new(40.0, 580.0 - h / 2.0, 520.0, h);
     panel(r, 30.0, dim);
     outlined("Paused", 300.0, r.y + 86.0, 64.0, fade(CREAM, dim), fade(INK, dim), Align::Center);
-    // The touch buttons' labels, and what they do
-    let rows: [(&[&str], &str); 3] = [(&["<", ">"], "walk"), (&["^"], "jump / climb up"), (&["v"], "let go of a branch")];
-    let mut y = r.y + 150.0;
-    for (keys, what) in rows {
-        for (i, key) in keys.iter().enumerate() {
-            let at = vec2(r.x + 70.0 + i as f32 * 52.0, y);
-            draw_circle(at.x, at.y, 22.0, fade(WHITE, 0.3 * dim));
-            draw_circle_lines(at.x, at.y, 22.0, 2.0, fade(CREAM, 0.6 * dim));
-            text(key, at.x, at.y + 8.0, 24.0, fade(CREAM, dim), Align::Center);
-        }
-        text(what, r.x + 176.0, y + 9.0, 26.0, fade(CREAM, dim), Align::Left);
-        y += 66.0;
-    }
+    layout.draw(&rows, r.y + 124.0, dim, |kind, at| legend_icon(assets, kind, at, t, dim));
     if time > 0.3 {
         tap_prompt("Tap to resume", r.bottom() - 46.0, t);
     }
+}
+
+/// A little moving picture of a gesture or the keys for one of the pause card's rows.
+fn legend_icon(assets: &Assets, kind: Legend, at: Vec2, t: f32, alpha: f32) {
+    let line = fade(CREAM, 0.75 * alpha);
+    let soft = fade(WHITE, 0.25 * alpha);
+    let fingertip = |p: Vec2, a: f32| {
+        draw_circle(p.x, p.y, 12.0, fade(CREAM, 0.85 * a * alpha));
+        draw_circle_lines(p.x, p.y, 12.0, 2.0, fade(INK, 0.4 * a * alpha));
+    };
+    match kind {
+        Legend::Slide => {
+            // The slider's track and its knob, sliding to and fro, with arrows either end
+            draw_rectangle(at.x - 38.0, at.y - 4.0, 76.0, 8.0, soft);
+            for side in [-1.0, 1.0] {
+                let tip = at + vec2(side * 52.0, 0.0);
+                draw_triangle(tip, tip + vec2(-side * 10.0, -8.0), tip + vec2(-side * 10.0, 8.0), line);
+            }
+            fingertip(at + vec2((t * 2.0).sin() * 28.0, 0.0), 1.0);
+        }
+        Legend::Hold => {
+            // A finger held down while the charge ring fills, over and over
+            let filled = (t * 0.8).fract();
+            charge_ring(at + vec2(0.0, 14.0), filled, if filled > 0.9 { RING_FULL } else { RING_FILL }, alpha);
+            fingertip(at + vec2(0.0, -4.0), 1.0);
+        }
+        Legend::Swipe => {
+            // A finger flicking down past a chevron
+            let k = (t * 1.2).fract();
+            let p = at + vec2(0.0, -20.0 + 30.0 * k);
+            draw_line(at.x, at.y - 20.0, p.x, p.y, 6.0, fade(WHITE, 0.2 * alpha));
+            fingertip(p, 1.0 - k * k);
+            for side in [-1.0, 1.0] {
+                draw_line(at.x + side * 14.0, at.y + 12.0, at.x, at.y + 24.0, 4.0, line);
+            }
+        }
+        Legend::ArrowKeys => {
+            keycap(Rect::new(at.x - 48.0, at.y - 20.0, 44.0, 40.0), alpha, |c| arrow(c, vec2(-1.0, 0.0), line));
+            keycap(Rect::new(at.x + 4.0, at.y - 20.0, 44.0, 40.0), alpha, |c| arrow(c, vec2(1.0, 0.0), line));
+        }
+        Legend::SpaceKey => keycap(Rect::new(at.x - 52.0, at.y - 20.0, 104.0, 40.0), alpha, |c| {
+            text("Space", c.x, c.y + 7.0, 20.0, line, Align::Center);
+        }),
+        Legend::DownKey => keycap(Rect::new(at.x - 22.0, at.y - 20.0, 44.0, 40.0), alpha, |c| arrow(c, vec2(0.0, 1.0), line)),
+        // Bobbing as if on a springy branch
+        Legend::Bounce => crouched_on_ring(assets, at - vec2(0.0, (t * 4.0).sin().abs() * 6.0), RING_SWEET, alpha),
+    }
+}
+
+/// A rounded key with whatever `label` draws at its centre.
+fn keycap(r: Rect, alpha: f32, label: impl Fn(Vec2)) {
+    rounded_rect(r, 8.0, fade(rgb(0.95, 0.92, 0.84), 0.28 * alpha), fade(rgb(0.70, 0.66, 0.60), 0.28 * alpha));
+    rounded_outline(r, 8.0, 2.0, fade(CREAM, 0.6 * alpha));
+    label(r.center());
+}
+
+/// A small solid arrowhead pointing along `dir` (a unit vector), centred at `at`.
+fn arrow(at: Vec2, dir: Vec2, color: Color) {
+    let side = vec2(-dir.y, dir.x) * 9.0;
+    draw_triangle(at + dir * 9.0, at - dir * 6.0 + side, at - dir * 6.0 - side, color);
 }
 
 // ---------------------------------------------------------------------------------------------
