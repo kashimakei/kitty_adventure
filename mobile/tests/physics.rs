@@ -163,6 +163,17 @@ fn sturdy_branches(sim: &Sim) -> Vec<usize> {
         .collect()
 }
 
+/// Runs `check` on levels 1-5 with each of `seeds`, all at once (a thread each), and collects
+/// what each returns.
+fn each_level<T: Send>(seeds: std::ops::Range<u64>, check: impl Fn(usize, u64) -> T + Sync) -> Vec<T> {
+    let cases: Vec<(usize, u64)> = (1..=5).flat_map(|level| seeds.clone().map(move |seed| (level, seed))).collect();
+    let check = &check;
+    std::thread::scope(|scope| {
+        let runs: Vec<_> = cases.iter().map(|&(level, seed)| scope.spawn(move || check(level, seed))).collect();
+        runs.into_iter().map(|run| run.join().unwrap()).collect()
+    })
+}
+
 /// A full leap from standing, then bounce after bounce: hold the jump again as she comes down,
 /// land braced, and let go at the best moment as the wood springs back. Returns each flight's
 /// height above where she started and the landing that snapped the limb, if one did.
@@ -386,6 +397,46 @@ fn an_over_pumped_limb_leaves_a_stub_to_stand_and_leap_on() {
         }
     }
     assert!(stubs >= 5, "only {stubs} stubs");
+}
+
+/// Over-pumping costs her the climb: when a sturdy limb snaps with her middle paw past the break,
+/// she goes down with the piece that falls, and the stub, springing back up as it loses that
+/// piece and her weight, doesn't catch her back paw (nor can she land on or grab it) for the next
+/// second. With her middle paw on the stub side she stays on the stub.
+#[test]
+fn snapping_past_her_paw_takes_her_down_with_the_piece() {
+    let results = each_level(0..4, |level, seed| {
+        let base = Sim::new(level, seed);
+        let (mut fell, mut stayed) = (0, 0);
+        for id in sturdy_branches(&base).into_iter().filter(|&id| !base.limbs[id].is_goal) {
+            for f in [0.8, 0.9, 1.0] {
+                let spot = along(&base.limbs[id], f);
+                let mut sim = base.alone(id);
+                assert!(sim.stand_on(0, spot));
+                let (heights, broke) = bounce(&mut sim, spot, 12);
+                if broke.is_none() {
+                    continue;
+                }
+                let context = format!("level {level} seed {seed} limb {id} at {f}: {heights:?}");
+                assert!(sim.limbs[0].just_snapped && sim.kitty.standing_on == Some(Support::Limb(0)), "{context}");
+                let past = sim.limbs[0].fell_away(sim.kitty.x);
+                for step in 0..60 {
+                    sim.step(Controls::default());
+                    let on = sim.kitty.standing_on == Some(Support::Limb(0)) || sim.kitty.hanging_on == Some(0) || sim.kitty.climbing_on == Some(0);
+                    assert!(on != past, "{context}: middle paw past the break {past}, on the stub {on} {step} steps after the snap");
+                }
+                if past {
+                    fell += 1;
+                } else {
+                    stayed += 1;
+                }
+            }
+        }
+        (fell, stayed)
+    });
+    let (fell, stayed) = results.iter().fold((0, 0), |(f, s), r| (f + r.0, s + r.1));
+    println!("{fell} snaps took her down, {stayed} left her on the stub");
+    assert!(fell >= 50, "only {fell} snaps past her middle paw");
 }
 
 /// The goal limb, with the friend's nest, never snaps, however hard Kitty bounces on it anywhere.
@@ -898,45 +949,45 @@ fn walking_down_a_fork_steps_onto_its_parent() {
 /// the parent's stub stays, with Kitty on it.
 #[test]
 fn a_fork_goes_down_with_its_parent() {
-    let (mut fell, mut stayed) = (0, 0);
-    for level in 1..=5 {
-        for seed in 0..4 {
-            let base = Sim::new(level, seed);
-            for fork in (0..base.limbs.len()).filter(|&i| base.limbs[i].attachment.is_some()) {
-                let attachment = base.limbs[fork].attachment.unwrap();
-                let parent = attachment.parent;
-                let context = format!("level {level} seed {seed} fork {fork}");
-                let mut sim = base.clone();
-                if !sim.stand_on(fork, along(&base.limbs[fork], 0.7)) {
-                    continue;
-                }
-                let gold = Item::new(ItemKind::Gold, fork, 0.8, 0.0);
-                // Snapped just inside the fork
-                let mut inside = sim.clone();
-                let branch = &mut inside.limbs[parent].branch;
-                branch.snap_distance = (attachment.node as f32 - 0.5) * branch.segment_len;
-                branch.snap();
-                inside.run(300, Controls::default());
-                let limb = &inside.limbs[fork];
-                assert!(limb.gone() && limb.surface_y(along(&base.limbs[fork], 0.5)).is_none(), "{context}: still there");
-                assert!(gold.position(&inside.limbs, 0.0).is_none(), "{context}: the gold stayed in the air");
-                assert!(inside.kitty.standing_on != Some(Support::Limb(fork)) && inside.kitty.y <= GROUND_Y + 0.5,
-                        "{context}: rode it down to y {:.0} on {:?}", inside.kitty.y, inside.kitty.standing_on);
-                fell += 1;
-                // Snapped as short as it can, which leaves most forks on the stub
-                let mut short = sim.clone();
-                let at = short.limbs[parent].base().x;
-                short.limbs[parent].snap_at(at);
-                short.run(120, Controls::default());
-                if short.limbs[parent].branch.broken_at.unwrap() >= attachment.node {
-                    assert!(!short.limbs[fork].broken() && short.kitty.standing_on == Some(Support::Limb(fork)),
-                            "{context}: a fork on the stub went down");
-                    assert!(gold.position(&short.limbs, 0.0).is_some(), "{context}: the gold on a fork on the stub went");
-                    stayed += 1;
-                }
+    let results = each_level(0..4, |level, seed| {
+        let base = Sim::new(level, seed);
+        let (mut fell, mut stayed) = (0, 0);
+        for fork in (0..base.limbs.len()).filter(|&i| base.limbs[i].attachment.is_some()) {
+            let attachment = base.limbs[fork].attachment.unwrap();
+            let parent = attachment.parent;
+            let context = format!("level {level} seed {seed} fork {fork}");
+            let mut sim = base.clone();
+            if !sim.stand_on(fork, along(&base.limbs[fork], 0.7)) {
+                continue;
+            }
+            let gold = Item::new(ItemKind::Gold, fork, 0.8, 0.0);
+            // Snapped just inside the fork
+            let mut inside = sim.clone();
+            let branch = &mut inside.limbs[parent].branch;
+            branch.snap_distance = (attachment.node as f32 - 0.5) * branch.segment_len;
+            branch.snap();
+            inside.run(300, Controls::default());
+            let limb = &inside.limbs[fork];
+            assert!(limb.gone() && limb.surface_y(along(&base.limbs[fork], 0.5)).is_none(), "{context}: still there");
+            assert!(gold.position(&inside.limbs, 0.0).is_none(), "{context}: the gold stayed in the air");
+            assert!(inside.kitty.standing_on != Some(Support::Limb(fork)) && inside.kitty.y <= GROUND_Y + 0.5,
+                    "{context}: rode it down to y {:.0} on {:?}", inside.kitty.y, inside.kitty.standing_on);
+            fell += 1;
+            // Snapped as short as it can, which leaves most forks on the stub
+            let mut short = sim.clone();
+            let at = short.limbs[parent].base().x;
+            short.limbs[parent].snap_at(at);
+            short.run(120, Controls::default());
+            if short.limbs[parent].branch.broken_at.unwrap() >= attachment.node {
+                assert!(!short.limbs[fork].broken() && short.kitty.standing_on == Some(Support::Limb(fork)),
+                        "{context}: a fork on the stub went down");
+                assert!(gold.position(&short.limbs, 0.0).is_some(), "{context}: the gold on a fork on the stub went");
+                stayed += 1;
             }
         }
-    }
+        (fell, stayed)
+    });
+    let (fell, stayed) = results.iter().fold((0, 0), |(f, s), r| (f + r.0, s + r.1));
     assert!(fell > 20 && stayed > 20, "only {fell} forks fell and {stayed} stayed");
 }
 
@@ -993,21 +1044,21 @@ const CHARGES: [u32; 4] = [CHARGE_STEPS + 1, 22, 16, 12];
 /// full leap would sail up onto that instead, and a lighter charge drops onto the path.
 #[test]
 fn every_path_branch_is_one_leap_from_the_last() {
-    let (mut full, mut lighter) = (0, 0);
-    for level in 1..=5 {
-        for seed in 0..4 {
-            let base = Sim::new(level, seed);
-            for to in 0..base.path {
-                let charge = leap_to(&base, to.checked_sub(1), to, &CHARGES);
-                assert!(charge.is_some(), "level {level} seed {seed}: no leap from path branch {} reaches {to}", to as isize - 1);
-                if charge == Some(CHARGES[0]) {
-                    full += 1;
-                } else {
-                    lighter += 1;
-                }
+    let results = each_level(0..4, |level, seed| {
+        let base = Sim::new(level, seed);
+        let (mut full, mut lighter) = (0, 0);
+        for to in 0..base.path {
+            let charge = leap_to(&base, to.checked_sub(1), to, &CHARGES);
+            assert!(charge.is_some(), "level {level} seed {seed}: no leap from path branch {} reaches {to}", to as isize - 1);
+            if charge == Some(CHARGES[0]) {
+                full += 1;
+            } else {
+                lighter += 1;
             }
         }
-    }
+        (full, lighter)
+    });
+    let (full, lighter) = results.iter().fold((0, 0), |(f, l), r| (f + r.0, l + r.1));
     // Lighter charges are the exception
     println!("{full} path branches take a full charge, {lighter} a lighter one");
     assert!(lighter * 10 <= full, "{lighter} path branches need a lighter charge, {full} take a full one");
@@ -1020,31 +1071,27 @@ fn every_path_branch_is_one_leap_from_the_last() {
 /// everywhere, and a lighter one where a full leap would sail up onto something overhead.
 #[test]
 fn every_path_branch_is_one_leap_past_a_stub() {
-    let cases: Vec<(usize, u64)> = (1..=5).flat_map(|level| (0..4).map(move |seed| (level, seed))).collect();
-    let results: Vec<(usize, usize)> = std::thread::scope(|scope| {
-        let runs: Vec<_> = cases.iter().map(|&(level, seed)| scope.spawn(move || {
-            let base = Sim::new(level, seed);
-            let (mut full, mut lighter) = (0, 0);
-            for k in (0..base.path - 1).filter(|&k| !base.limbs[k].thin) {
-                let mut sim = base.clone();
-                sim.snap_short(k);
-                let stub = &sim.limbs[k];
-                assert!(stub.stub && stub.branch.broken_at == Some(stub_segments(stub.segments()).0));
-                let up = leap_to(&sim, k.checked_sub(1), k, &CHARGES);
-                assert!(up.is_some(), "level {level} seed {seed}: no leap from path branch {} reaches the stub of {k}", k as isize - 1);
-                let on = leap_to(&sim, Some(k), k + 1, &CHARGES);
-                assert!(on.is_some(), "level {level} seed {seed}: no leap from the stub of path branch {k} reaches {}", k + 1);
-                for charge in [up, on] {
-                    if charge == Some(CHARGES[0]) {
-                        full += 1;
-                    } else {
-                        lighter += 1;
-                    }
+    let results = each_level(0..4, |level, seed| {
+        let base = Sim::new(level, seed);
+        let (mut full, mut lighter) = (0, 0);
+        for k in (0..base.path - 1).filter(|&k| !base.limbs[k].thin) {
+            let mut sim = base.clone();
+            sim.snap_short(k);
+            let stub = &sim.limbs[k];
+            assert!(stub.stub && stub.branch.broken_at == Some(stub_segments(stub.segments()).0));
+            let up = leap_to(&sim, k.checked_sub(1), k, &CHARGES);
+            assert!(up.is_some(), "level {level} seed {seed}: no leap from path branch {} reaches the stub of {k}", k as isize - 1);
+            let on = leap_to(&sim, Some(k), k + 1, &CHARGES);
+            assert!(on.is_some(), "level {level} seed {seed}: no leap from the stub of path branch {k} reaches {}", k + 1);
+            for charge in [up, on] {
+                if charge == Some(CHARGES[0]) {
+                    full += 1;
+                } else {
+                    lighter += 1;
                 }
             }
-            (full, lighter)
-        })).collect();
-        runs.into_iter().map(|run| run.join().unwrap()).collect()
+        }
+        (full, lighter)
     });
     let (full, lighter) = results.iter().fold((0, 0), |(f, l), r| (f + r.0, l + r.1));
     println!("past stubs: {full} leaps take a full charge, {lighter} a lighter one");

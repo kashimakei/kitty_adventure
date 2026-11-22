@@ -138,8 +138,13 @@ pub const THIN_BRANCH_STRENGTH: (f32, f32) = (1.15, 1.3);
 /// bouncing on it too hard snaps it partway along, leaving a stub (see `limb::STUB_SHARE`). The
 /// goal limb never snaps.
 pub const STURDY_BRANCH_STRENGTH: f32 = 3.0;
+/// Each path branch is at most this far above the one below, and this far across from it.
 pub const MAX_BRANCH_GAP: f32 = 360.0;
 pub const MAX_BRANCH_HOP: f32 = 150.0;
+/// And at most this far across from it once sturdy ones snap as short as they can (see
+/// `limb::STUB_SHARE`): further than a whole branch's tip can be, as a stub's stiff end launches
+/// Kitty better, but never two stubs pointing at each other from trees on either side of another.
+pub const MAX_STUB_HOP: f32 = 200.0;
 pub const FILLERS_PER_PATH_BRANCH: usize = 2;
 pub const BRANCH_SEGMENT_LEN: f32 = 18.0;
 pub const BRANCH_SUB_STEPS: usize = 8;

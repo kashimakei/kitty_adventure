@@ -96,8 +96,6 @@ pub struct Limb {
 const GIVE_PROBE: f32 = 0.85;
 const GIVE_PROBE_STEPS: usize = 90;
 const GIVE_PROBE_AVERAGE: usize = 30;
-/// A snapped stub is still swinging: let a copy settle this many steps before measuring its give.
-const STUB_SETTLE_STEPS: usize = 90;
 
 /// An over-pumped sturdy limb breaks right under Kitty's paws, but the stub it leaves keeps at
 /// least the first share of its segments (so the level can still be climbed past it) and at most
@@ -107,6 +105,11 @@ pub const STUB_SHARE: (f32, f32) = (0.6, 0.8);
 /// dead: it takes only this share of a kick (a landing, a push-off), so it hardly springs back.
 const STUB_STIFFNESS: f32 = 1.0;
 const STUB_KICK: f32 = 0.15;
+/// The share of the whole limb's give a stub keeps, `.0 * s + .1` for wood of the limb's stiffness
+/// `s`: about a quarter for the bendiest wood, three quarters for the stiffest. Fitted to stubs
+/// settled and measured like whole limbs: most come within 0.02 of that, the worst 0.15 (where
+/// the whole limb's own give is least like a beam's).
+const STUB_GIVE_KEPT: (f32, f32) = (1.04, -0.28);
 
 /// The segments a sturdy limb of `segments` can break at (see `STUB_SHARE`): the stub keeps the
 /// segments up to there.
@@ -256,6 +259,8 @@ impl Limb {
         self.stub = true;
         self.branch.strength = 0.0;
         self.fatigue = 0.0;
+        // Every spring starts out as stiff as the limb's wood
+        let stiffness = self.branch.constraints.first().map_or(STUB_STIFFNESS, |c| c.stiffness);
         if let Some(seg) = self.branch.broken_at {
             let columns = self.segments() + 1;
             for c in &mut self.branch.constraints {
@@ -264,13 +269,17 @@ impl Limb {
                 }
             }
         }
-        (self.give_measured, self.give_reach) = self.measure_give(STUB_SETTLE_STEPS);
+        // As for a beam fixed at one end, how far it sags under a weight doesn't depend on the
+        // wood past the weight, so the stub gives as the whole limb did at the same spot, less
+        // what its stiffer wood takes out
+        let (slope, offset) = STUB_GIVE_KEPT;
+        self.give_measured *= (slope * stiffness + offset).clamp(0.0, 1.0);
     }
 
     /// Measure how far the limb sags with Kitty standing near its tip, on a copy so the level
     /// itself is untouched. `base_give` is what a fork's parent adds where the fork grows out.
     pub fn calibrate_give(&mut self, base_give: f32) {
-        (self.give_measured, self.give_reach) = self.measure_give(0);
+        (self.give_measured, self.give_reach) = self.measure_give();
         self.give_base = base_give;
     }
 
@@ -280,16 +289,12 @@ impl Limb {
         self.give_base = base_give;
     }
 
-    /// The give measured near the end of the walkable span (after letting a copy settle for
-    /// `settle` steps), and how far out from the base that was.
-    fn measure_give(&self, settle: usize) -> (f32, f32) {
+    /// The give measured near the end of the walkable span, and how far out from the base that was.
+    fn measure_give(&self) -> (f32, f32) {
         let (lo, hi) = self.walk_range();
         let x = if self.direction > 0.0 { lo + (hi - lo) * GIVE_PROBE } else { hi - (hi - lo) * GIVE_PROBE };
         let mut probe = self.clone();
         let mut rng = Rng::new(0x61FE);
-        for _ in 0..settle {
-            probe.step(0.0, 0.0, None, &mut rng);
-        }
         let rest = probe.surface_y(x).unwrap_or(0.0);
         let mut sag = 0.0;
         for step in 0..GIVE_PROBE_STEPS {
@@ -374,9 +379,10 @@ impl Limb {
         0.0
     }
 
-    /// The top surface at `x`, where the wood is still on the tree.
+    /// The top surface at `x`, where the wood is still on the tree (not the scrap a thin limb
+    /// leaves inside the trunk when it snaps).
     pub fn surface_y(&self, x: f32) -> Option<f32> {
-        if self.fallen { None } else { self.branch.surface_y(x) }
+        if self.gone() { None } else { self.branch.surface_y(x) }
     }
 
     /// Highest point of the top surface under any of `xs`.

@@ -2,6 +2,7 @@
 //! story levels is one stretch of forest three screens wide, with a friend to rescue at the top.
 
 use crate::consts::*;
+use crate::limb::STUB_SHARE;
 use crate::rng::Rng;
 
 pub const STORY_LEVELS: usize = 5;
@@ -164,6 +165,8 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
         targets.push(*rng.pick(&screen_centres));
     }
     let mut prev_span = (WORLD_W / 2.0 - 50.0, WORLD_W / 2.0 + 50.0);
+    // What's sure to be left of the one below: a sturdy branch can snap, leaving a stub
+    let mut prev_kept = prev_span;
     let mut last_slot = None;
     let mut y = 10.0;
     let mut branches = Vec::new();
@@ -171,8 +174,15 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
         y -= gap;
         let target = targets[i / 4];
         let length = rng.pair(BRANCH_LENGTH).min(max_length);
+        let is_last = i + 1 == path_len;
+        // The goal never snaps
+        let kept = if is_last { length } else { length * STUB_SHARE.0 };
         let reachable: Vec<(usize, f32)> = slots.iter().copied()
-            .filter(|&s| Some(s) != last_slot && gap_between(span(&tree_xs, s, length), prev_span) <= MAX_BRANCH_HOP)
+            .filter(|&s| {
+                Some(s) != last_slot
+                    && gap_between(span(&tree_xs, s, length), prev_span) <= MAX_BRANCH_HOP
+                    && gap_between(span(&tree_xs, s, kept), prev_kept) <= MAX_STUB_HOP
+            })
             .collect();
         let slot = if rng.chance(0.7) {
             *reachable.iter().min_by(|a, b| {
@@ -183,11 +193,12 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
         } else {
             *rng.pick(&reachable)
         };
-        let is_last = i + 1 == path_len;
         // A thin branch can snap, so only make one where Kitty could climb past it without it
         let thin = !is_last && rng.chance(THIN_BRANCH_CHANCE) && gap + gaps[i + 1] <= MAX_BRANCH_GAP;
         branches.push(new_branch(&mut rng, &d, slot, y, length, thin, true, is_last));
         prev_span = span(&tree_xs, slot, length);
+        // A thin one snaps at the trunk, and then the path climbs past it
+        prev_kept = span(&tree_xs, slot, if thin { length } else { kept });
         last_slot = Some(slot);
     }
 
@@ -307,7 +318,8 @@ fn new_branch(rng: &mut Rng, d: &Difficulty, (tree, direction): (usize, f32), y:
 mod tests {
     use super::*;
 
-    /// Every generated level has one goal, and each path branch is within a jump of the one below.
+    /// Every generated level has one goal, and each path branch is within a jump of the one below,
+    /// even once sturdy ones have snapped as short as they can.
     #[test]
     fn levels_are_climbable() {
         for level in 1..=STORY_LEVELS {
@@ -317,11 +329,16 @@ mod tests {
                     assert_eq!(plan.branches.iter().filter(|b| b.goal).count(), 1);
                     let path: Vec<&BranchPlan> = plan.branches.iter().filter(|b| b.on_path).collect();
                     let mut below = (WORLD_W / 2.0 - 50.0, WORLD_W / 2.0 + 50.0, 10.0);
+                    let mut below_kept = (below.0, below.1);
                     for b in path {
                         let s = span(&plan.tree_xs, (b.tree, b.direction), b.length);
+                        let sturdy = b.strength == 0.0 && !b.goal;
+                        let kept = span(&plan.tree_xs, (b.tree, b.direction), b.length * if sturdy { STUB_SHARE.0 } else { 1.0 });
                         assert!(below.2 - b.y <= MAX_BRANCH_GAP + 1.0, "gap too tall: level {level} lap {lap} seed {seed}");
                         assert!(gap_between(s, (below.0, below.1)) <= MAX_BRANCH_HOP + 1.0);
+                        assert!(gap_between(kept, below_kept) <= MAX_STUB_HOP + 1.0, "stubs too far apart: level {level} lap {lap} seed {seed}");
                         below = (s.0, s.1, b.y);
+                        below_kept = kept;
                     }
                     for item in &plan.items {
                         assert!(item.limb < plan.branches.len() + plan.forks.len());

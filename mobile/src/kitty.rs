@@ -119,8 +119,8 @@ fn joined(limbs: &[Limb], a: LimbId, b: LimbId) -> bool {
     a == b || parent(a) == Some(b) || parent(b) == Some(a)
 }
 
-/// Dropping through a limb: which one, the limbs that can't catch her (it, and any level with
-/// her as she left), the height she left at, and steps since.
+/// Dropping through a limb (or falling from one that gave way): which one, the limbs that can't
+/// catch her (it, and any level with her as she left), the height she left at, and steps since.
 #[derive(Clone)]
 struct DropThrough {
     limb: LimbId,
@@ -570,7 +570,7 @@ impl Kitty {
                     // Walked off the tip, back past the base through the trunk, or it snapped
                     if let Support::Limb(id) = support {
                         if limbs[id].gave_way() {
-                            self.panicking = true;
+                            self.fall_with(id);
                         } else if let Some((next, s)) = self.step_across(limbs, id) {
                             // Walking down a fork onto its parent, or onto a branch just
                             // alongside: step across instead of dropping through it
@@ -753,11 +753,10 @@ impl Kitty {
         self.climb_wait = None;
     }
 
+    /// Let go of the limb she's hanging from or climbing; `panic` if it gave way.
     pub fn let_go(&mut self, panic: bool) {
-        if self.hanging_on.is_none() && self.climbing_on.is_none() {
-            return;
-        }
-        self.released_from = self.hanging_on.or(self.climbing_on);
+        let Some(id) = self.hanging_on.or(self.climbing_on) else { return };
+        self.released_from = Some(id);
         self.released_steps = REGRAB_STEPS;
         self.hanging_on = None;
         self.climbing_on = None;
@@ -765,6 +764,17 @@ impl Kitty {
         self.falling = true;
         self.velocity = 0.0;
         self.panicking = panic;
+        if panic {
+            self.fall_with(id);
+        }
+    }
+
+    /// The limb she was on or holding gave way: she goes down in a panic with the piece that fell.
+    /// What's left of it (a stub, springing back up as it loses that piece and her weight) can't
+    /// catch her, as if she were dropping through it, until she's well below it.
+    fn fall_with(&mut self, id: LimbId) {
+        self.panicking = true;
+        self.drop_through = Some(DropThrough { limb: id, skip: vec![id], from_y: self.y, steps: 0 });
     }
 
     /// Take a hit from something at `from_x`. Returns false while still blinking from the last.
