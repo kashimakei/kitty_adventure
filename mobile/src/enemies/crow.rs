@@ -51,7 +51,8 @@ const PERCH_CHANCE: f32 = 0.45;
 /// Limb tips it considers landing on: this far ahead (px), within this much height of it.
 const PERCH_AHEAD: (f32, f32) = (40.0, 380.0);
 const PERCH_HEIGHT: f32 = 320.0;
-/// It won't pick a perch this close to Kitty, or under the score bar or the touch buttons.
+/// It won't pick a perch this close to Kitty, or under the score bar or low down where thumbs
+/// cover the screen.
 const PERCH_CLEARANCE: f32 = 170.0;
 const PERCH_VIEW_TOP: f32 = 160.0;
 const PERCH_VIEW_BOTTOM: f32 = 260.0;
@@ -192,7 +193,7 @@ impl Crow {
         let kitty = ctx.kitty.body.center();
         ctx.limbs.iter().enumerate()
             .filter(|(id, limb)| {
-                !limb.is_goal && !limb.broken() && ctx.kitty.standing_on != Some(Support::Limb(*id))
+                !limb.is_goal && !limb.gone() && ctx.kitty.standing_on != Some(Support::Limb(*id))
             })
             .filter_map(|(id, limb)| {
                 let (lo, hi) = limb.walk_range();
@@ -212,7 +213,7 @@ impl Crow {
     /// Stand on the perch where the limb is now. False if the limb broke or bent away.
     fn ride(&mut self, limbs: &[Limb], perch: Perch) -> bool {
         let limb = &limbs[perch.limb];
-        if limb.broken() {
+        if limb.fell_away(perch.x) {
             return false;
         }
         let (lo, hi) = limb.walk_range();
@@ -233,7 +234,7 @@ impl Crow {
     }
 
     fn kick(&self, ctx: &mut EnemyCtx, perch: Perch) {
-        if !ctx.limbs[perch.limb].broken() {
+        if !ctx.limbs[perch.limb].fell_away(perch.x) {
             ctx.pushes.push(Push::Kick { limb: perch.limb, x: perch.x, speed: PERCH_KICK });
         }
     }
@@ -372,7 +373,7 @@ impl Enemy for Crow {
             State::Approach { perch, from, timer, duration } => {
                 let timer = timer + STEP;
                 let limb = &limbs[perch.limb];
-                let Some(y) = limb.surface_y(perch.x).filter(|_| !limb.broken()) else {
+                let Some(y) = limb.surface_y(perch.x).filter(|_| !limb.fell_away(perch.x)) else {
                     // The limb went; fly on
                     self.state = State::Climb { vel: vec2(self.dir * self.speed, 0.0), target_y: from.y };
                     return;

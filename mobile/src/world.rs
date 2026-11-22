@@ -145,19 +145,10 @@ impl World {
         }
     }
 
-    /// Apply loads and jolts; weight on a fork also bears on its parent.
+    /// Apply loads, kicks and jolts; a hard kick shakes a few leaves loose.
     fn apply(&mut self, pushes: Vec<Push>) {
-        for push in pushes {
-            match push {
-                Push::Load { limb, x, weight } => load_limb(&mut self.limbs, limb, x, weight),
-                Push::Kick { limb, x, speed } => {
-                    self.limbs[limb].kick(x, speed);
-                    if speed > 0.6 {
-                        let at = vec2(x, self.limbs[limb].surface_y(x).unwrap_or(self.kitty.y));
-                        self.effects.shake_leaves(at, 2, &mut self.rng);
-                    }
-                }
-            }
+        for at in apply_pushes(&mut self.limbs, pushes) {
+            self.effects.shake_leaves(at, 2, &mut self.rng);
         }
     }
 
@@ -192,23 +183,13 @@ impl World {
         }
         self.elapsed += STEP;
 
-        // Kitty
-        if controls.jump {
-            self.kitty.do_jump(&self.limbs);
-            if self.kitty.jumped {
-                self.sfx.push(Sfx::Jump);
-            }
+        let kitty = step_kitty(&mut self.kitty, &mut self.limbs, controls, self.breeze);
+        if kitty.jumped {
+            self.sfx.push(Sfx::Jump);
         }
-        if !controls.jump_held {
-            self.kitty.stop_jump();
+        for at in kitty.shakes {
+            self.effects.shake_leaves(at, 2, &mut self.rng);
         }
-        if controls.down {
-            self.kitty.let_go(false);
-        }
-        self.kitty.step(controls.left, controls.right, self.breeze);
-        self.kitty.resolve(&self.limbs);
-        let pushes = std::mem::take(&mut self.kitty.pushes);
-        self.apply(pushes);
 
         self.step_limbs();
 
@@ -283,6 +264,8 @@ impl World {
         // Reaching the friend's nest
         if self.kitty.standing_on == Some(Support::Limb(self.goal)) && (self.kitty.x - self.nest_position().x).abs() < 70.0 {
             self.rescued = true;
+            // She sits and waits now, whatever was held
+            self.kitty.forget_input();
             self.sfx.push(Sfx::Rescue);
             self.effects.sparkle(self.nest_position() - vec2(0.0, 40.0));
             return Outcome::Rescued;
@@ -298,8 +281,13 @@ impl World {
 
     fn step_limbs(&mut self) {
         step_limbs(&mut self.limbs, self.breeze, self.time, &mut self.rng);
+        let mut snapped = false;
         for limb in self.limbs.iter().filter(|l| l.just_snapped) {
-            self.sfx.push(Sfx::Snap);
+            // One crack, even if a fork goes down with its parent
+            if !snapped {
+                self.sfx.push(Sfx::Snap);
+                snapped = true;
+            }
             self.effects.shake_leaves(limb.tip(), 6, &mut self.rng);
         }
     }
@@ -423,7 +411,10 @@ impl World {
         for acorn in &self.projectiles {
             acorn.draw(assets);
         }
+        // The charge ring wraps round her: its far half behind her, its near half in front
+        self.kitty.draw_ring(kitty_offset, self.time, false);
         self.kitty.draw(assets, kitty_offset);
+        self.kitty.draw_ring(kitty_offset, self.time, true);
         for enemy in self.enemies.iter().filter(|e| e.in_front()) {
             enemy.draw(assets);
         }
@@ -460,7 +451,17 @@ pub fn build_limbs(plan: &LevelPlan, rng: &mut Rng) -> Vec<Limb> {
             stiffness: b.stiffness,
             gnarl: b.gnarl,
             rise: 0.0,
-            strength: b.strength,
+            // The plan only sets a strength for thin branches; sturdy ones are far stronger but
+            // can still be snapped by bouncing on them too hard. The goal, with the friend's nest,
+            // never snaps.
+            strength: if b.goal {
+                0.0
+            } else if b.strength > 0.0 {
+                b.strength
+            } else {
+                STURDY_BRANCH_STRENGTH * KITTY_WEIGHT
+            },
+            thin: b.strength > 0.0,
             tree: b.tree,
             trunk_half: half,
             attachment: None,
@@ -483,7 +484,8 @@ pub fn build_limbs(plan: &LevelPlan, rng: &mut Rng) -> Vec<Limb> {
             stiffness: fork.stiffness,
             gnarl: fork.gnarl,
             rise: fork.rise,
-            strength: 0.0,
+            strength: STURDY_BRANCH_STRENGTH * KITTY_WEIGHT,
+            thin: false,
             tree: parent.tree,
             trunk_half: 0.0,
             attachment: Some(Attachment { parent: fork.parent, node }),
@@ -493,15 +495,93 @@ pub fn build_limbs(plan: &LevelPlan, rng: &mut Rng) -> Vec<Limb> {
         limb.settle();
         limbs.push(limb);
     }
+    // How much each limb gives under Kitty, measured against its own sag; forks also ride on
+    // their parent's bend
+    for i in 0..limbs.len() {
+        let base_give = limbs[i].attachment.map_or(0.0, |a| {
+            limbs[a.parent].give_at(limbs[a.parent].top_point(a.node).x) * FORK_LOAD_SHARE
+        });
+        limbs[i].calibrate_give(base_give);
+    }
     limbs
 }
 
 /// One physics step for every limb. Parents come before their forks, so forks follow where the
-/// parent is now.
+/// parent is now. A fork goes down with its parent if that snapped off between the trunk and
+/// the fork; one left on a stub stays, its base giving no more than the stub does now.
 pub fn step_limbs(limbs: &mut [Limb], breeze: f32, time: f32, rng: &mut Rng) {
     for i in 0..limbs.len() {
-        let anchor = limbs[i].attachment.map(|a| limbs[a.parent].top_point(a.node));
-        limbs[i].step(breeze, time, anchor, rng);
+        step_limb(limbs, i, breeze, time, rng);
+    }
+}
+
+/// One physics step for limb `i` (after its parent, if it's a fork).
+pub fn step_limb(limbs: &mut [Limb], i: LimbId, breeze: f32, time: f32, rng: &mut Rng) {
+    let mut anchor = None;
+    if let Some(a) = limbs[i].attachment {
+        let parent = &limbs[a.parent];
+        let at = parent.top_point(a.node);
+        let fell = parent.fallen || parent.branch.broken_at.is_some_and(|seg| seg < a.node);
+        let base_give = (parent.just_snapped && !fell).then(|| parent.give_at(at.x) * FORK_LOAD_SHARE);
+        if fell {
+            limbs[i].fall_with_parent();
+        }
+        if let Some(give) = base_give {
+            limbs[i].set_base_give(give);
+        }
+        anchor = Some(at);
+    }
+    limbs[i].step(breeze, time, anchor, rng);
+}
+
+/// What a step of Kitty did that the world makes sounds and leaves fly for.
+#[derive(Default)]
+pub struct KittyStep {
+    pub jumped: bool,
+    pub landed: Option<Support>,
+    /// Where a limb took a kick hard enough to shake leaves loose.
+    pub shakes: Vec<Vec2>,
+}
+
+/// One step of Kitty: her jump and drop input, moving, then riding, catching or landing on
+/// whatever is under her, with her weight and kicks passed on to the limbs (which the caller
+/// steps afterwards). World and the physics tests both go through here.
+pub fn step_kitty(kitty: &mut Kitty, limbs: &mut [Limb], controls: &Controls, breeze: f32) -> KittyStep {
+    kitty.input(controls, limbs);
+    kitty.step(controls.move_x, breeze);
+    let landed = kitty.resolve(limbs);
+    let shakes = apply_pushes(limbs, std::mem::take(&mut kitty.pushes));
+    KittyStep { jumped: kitty.jumped, landed, shakes }
+}
+
+/// Apply loads, kicks and jolts (a fork passes some of its load and jolts on to its parent).
+/// Returns where a kick was hard enough to shake leaves loose.
+pub fn apply_pushes(limbs: &mut [Limb], pushes: Vec<Push>) -> Vec<Vec2> {
+    let mut shakes = Vec::new();
+    for push in pushes {
+        match push {
+            Push::Load { limb, x, weight } => load_limb(limbs, limb, x, weight),
+            Push::Kick { limb, x, speed } => {
+                limbs[limb].kick(x, speed);
+                if speed > SHAKE_KICK {
+                    if let Some(y) = limbs[limb].surface_y(x) {
+                        shakes.push(vec2(x, y));
+                    }
+                }
+            }
+            Push::Jolt { limb, x, force, fatigue } => jolt_limb(limbs, limb, x, force, fatigue),
+        }
+    }
+    shakes
+}
+
+/// A hard landing's jolt at `x`; like weight, a fork passes most of it on to its parent (where
+/// it grows out).
+pub fn jolt_limb(limbs: &mut [Limb], limb: LimbId, x: f32, force: f32, fatigue: f32) {
+    limbs[limb].jolt(x, force, fatigue);
+    if let Some(Attachment { parent, node }) = limbs[limb].attachment {
+        let px = limbs[parent].top_point(node).x;
+        limbs[parent].jolt(px, force * FORK_LOAD_SHARE, fatigue * FORK_LOAD_SHARE);
     }
 }
 

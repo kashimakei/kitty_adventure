@@ -190,7 +190,7 @@ impl Enemy for Squirrel {
             self.cooldown = ctx.rng.pair(FIRST_THROW);
             self.idle(ctx);
         }
-        if limb.broken() {
+        if limb.fell_away(self.pos.x) {
             self.fall(Vec2::ZERO);
             return;
         }

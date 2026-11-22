@@ -12,7 +12,7 @@ use crate::rng::Rng;
 use crate::sprites::{Animator, Assets, Clip};
 
 /// Pushes on the branch underfoot (Kitty is 38000): a thin branch holds Kitty or a dog, not both.
-const WEIGHT: f32 = 18000.0;
+pub const WEIGHT: f32 = 18000.0;
 const WALK_SPEED: f32 = 45.0; // px/s sniffing along, scaled by the level's dog speed
 const CHARGE_SPEED: f32 = 190.0; // px/s galloping at Kitty
 const GRAVITY: f32 = 1800.0; // px/s^2
@@ -24,7 +24,7 @@ const HOP_DOWN: f32 = 70.0; // px out from where it stood that a dog jumping dow
 const EXPLORE_REACH: f32 = 30.0; // px ahead along a branch overhead it hops up to
 /// Catching a branch: px it may spring up past the falling dog's feet and still hold it.
 const LAND_CATCH: f32 = 4.0;
-const LAND_KICK: f32 = LANDING_KICK * 8.0;
+const LAND_KICK: f32 = 0.48;
 const SIGHT: f32 = 260.0; // px; Kitty this close on the same level gets snarled at, then chased
 const SAME_LEVEL: f32 = 45.0; // px between feet that still counts as the same level
 const SNARL_TIME: f32 = 0.5; // seconds of snarling before the charge: the player's cue
@@ -103,11 +103,11 @@ pub struct Dog {
     animator: Animator,
 }
 
-/// Top of `support` under `x`; None off its end, or anywhere on a snapped limb.
+/// Top of `support` under `x`; None off its end, or where a snapped limb's wood has fallen away.
 fn surface(support: Support, limbs: &[Limb], x: f32) -> Option<f32> {
     match support {
         Support::Ground => (0.0..=WORLD_W).contains(&x).then_some(GROUND_Y),
-        Support::Limb(id) if limbs[id].broken() => None,
+        Support::Limb(id) if limbs[id].fell_away(x) => None,
         Support::Limb(id) => limbs[id].surface_y(x),
     }
 }
@@ -162,11 +162,14 @@ impl Dog {
 
     fn think(&mut self, ctx: &mut EnemyCtx, support: Support) {
         // Keep to the walkable span: a branch bending under the dog draws its tip in underfoot
+        // (unless the wood under the dog has snapped off)
         let (lo, hi) = walk_range(support, ctx.limbs);
-        self.x = self.x.clamp(lo, hi);
+        if !matches!(support, Support::Limb(id) if ctx.limbs[id].fell_away(self.x)) {
+            self.x = self.x.clamp(lo, hi);
+        }
         let Some(top) = surface(support, ctx.limbs, self.x) else {
             // The branch snapped, or bent away from under the dog's feet
-            let snapped = matches!(support, Support::Limb(id) if ctx.limbs[id].broken());
+            let snapped = matches!(support, Support::Limb(id) if ctx.limbs[id].gave_way());
             self.jump_target = None;
             self.take_off(0.0, 0.0, snapped);
             return;
@@ -291,7 +294,7 @@ impl Dog {
     /// Is limb `id` an intact branch above the dog and low enough to leap onto?
     fn reachable(&self, limbs: &[Limb], id: LimbId) -> bool {
         let limb = &limbs[id];
-        if self.support == Some(Support::Limb(id)) || limb.broken() {
+        if self.support == Some(Support::Limb(id)) || limb.gone() {
             return false;
         }
         let (lo, hi) = limb.walk_range();

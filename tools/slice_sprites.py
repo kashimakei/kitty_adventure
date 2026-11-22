@@ -62,6 +62,8 @@ CHARACTERS = {
             "core": "assets/source/kitty_sheet_core.jpg",
             "transitions": "assets/source/kitty_sheet_transitions.jpg",
             "hang_climb": "assets/source/kitty_sheet_hang_climb.jpg",
+            # Gemini, with the core sheet as reference; its bottom row just echoes the reference
+            "pounce": "assets/source/kitty_sheet_pounce.jpg",
         },
         "reference": ("walk", 0),
         "target_height": 88,  # the size everything else is judged against
@@ -86,6 +88,9 @@ CHARACTERS = {
             "hang":      ("hang_climb", (0, 50, 1330, 580), "grip"),
             "let_go":    ("hang_climb", (1330, 50, 2000, 580), "center"),
             "climb":     ("hang_climb", (0, 600, 2000, 1116), "nose"),
+            # Pounce sheet: crouching to charge a jump, the tail-swish wiggle and the spring
+            "crouch":    ("pounce", (0, 330, 2400, 820), "nose", 0.6),
+            "pounce":    ("pounce", (0, 840, 2400, 1400), "nose", 0.6),
         },
     },
     "dog": {

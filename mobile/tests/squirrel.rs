@@ -17,7 +17,7 @@ fn acorns_thrown(seed: u64, dx: f32, dy: f32, steps: usize) -> Option<usize> {
     let mut rng = Rng::new(seed);
     let limbs = build_limbs(&plan, &mut rng);
     // A sturdy limb well clear of the ground
-    let limb = (0..limbs.len()).find(|&i| limbs[i].base().y < -400.0 && !limbs[i].breakable() && limbs[i].attachment.is_none())?;
+    let limb = (0..limbs.len()).find(|&i| limbs[i].base().y < -400.0 && !limbs[i].thin && limbs[i].attachment.is_none())?;
     let (lo, hi) = limbs[limb].walk_range();
     let x = (lo + hi) / 2.0;
     let surface = limbs[limb].surface_y(x)?;

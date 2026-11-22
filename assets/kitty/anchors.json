@@ -72,6 +72,16 @@
       "climb_3.png",
       "climb_4.png",
       "climb_5.png"
+    ],
+    "crouch": [
+      "crouch_0.png",
+      "crouch_1.png",
+      "crouch_2.png"
+    ],
+    "pounce": [
+      "pounce_0.png",
+      "pounce_1.png",
+      "pounce_2.png"
     ]
   },
   "anchors": {
@@ -234,6 +244,30 @@
     "climb_5.png": [
       54,
       90
+    ],
+    "crouch_0.png": [
+      86,
+      81
+    ],
+    "crouch_1.png": [
+      78,
+      58
+    ],
+    "crouch_2.png": [
+      87,
+      57
+    ],
+    "pounce_0.png": [
+      61,
+      94
+    ],
+    "pounce_1.png": [
+      86,
+      63
+    ],
+    "pounce_2.png": [
+      84,
+      81
     ]
   },
   "hits": {}

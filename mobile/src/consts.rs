@@ -16,8 +16,8 @@ pub const WORLD_W: f32 = VIEW_W * WORLD_SCREENS;
 pub const GROUND_Y: f32 = 0.0;
 pub const GROUND_DEPTH: f32 = 160.0;
 
-// Camera: Kitty roams the middle of the screen before it pans; the bottom strip holds the
-// touch buttons, so the camera keeps Kitty above it.
+// Camera: Kitty roams the middle of the screen before it pans; on a phone, thumbs slide and hold
+// over the bottom strip, so the camera keeps Kitty above it.
 pub const CAMERA_DEADZONE_X: f32 = 0.35;
 pub const CAMERA_TOP_MARGIN: f32 = 0.33;
 pub const CAMERA_BOTTOM_MARGIN: f32 = 0.66;
@@ -26,25 +26,82 @@ pub const CAMERA_FOLLOW: f32 = 0.12;        // fraction of the gap closed per st
 
 // Kitty (per 60 Hz step, as in kitty.py)
 pub const KITTY_BOX: (f32, f32) = (100.0, 100.0);
+/// Top running speed, with the slider (or an arrow key) all the way over.
 pub const KITTY_SPEED: f32 = 5.0;
-pub const KITTY_GRAVITY: f32 = 0.5;
-pub const KITTY_JUMP_ACCEL: f32 = -1.0;
-pub const KITTY_JUMP_STEPS: u32 = 30; // how long holding jump keeps accelerating upward
-pub const KITTY_MIN_JUMP_STEPS: u32 = 10; // a quick tap on a phone still makes a proper hop
+/// A cat's arc rather than a rocket's: she slows as she rises, floats a moment at the top (gravity
+/// halves below `APEX_FLOAT_SPEED`), then drops a little quicker, up to `TERMINAL_SPEED`. Terminal
+/// speed is high so the height of a fall still shows when she lands.
+pub const RISE_GRAVITY: f32 = 0.6;
+pub const FALL_GRAVITY: f32 = 0.85;
+pub const APEX_FLOAT_SPEED: f32 = 2.0;
+pub const TERMINAL_SPEED: f32 = 40.0;
+/// Leg power (upward px/step) for a tap and for a full charge: about 70 px and 470 px high on
+/// solid ground. Charging eases from one to the other over `CHARGE_STEPS`.
+pub const LEAP_SPEED: (f32, f32) = (9.3, 24.0);
+pub const CHARGE_STEPS: u32 = 30;
+/// Crouched and charging, she can still creep along (and turn to aim) at this share of speed.
+pub const CHARGE_CREEP: f32 = 0.35;
+/// Crouching presses down a little harder than standing.
+pub const CHARGE_LOAD: f32 = 1.1;
+/// Forgiveness: a release this many steps before landing leaps on landing; a release this many
+/// steps after walking off an edge still leaps; a press in the last steps of a climb carries over.
+pub const LEAP_BUFFER_STEPS: u32 = 8;
+pub const COYOTE_STEPS: u32 = 6;
+pub const CLIMB_CARRY_STEPS: u32 = 15;
+/// Hanging, a held press climbs after this many steps (a tap climbs on release), so a swipe down
+/// to let go isn't mistaken for a climb.
+pub const CLIMB_HOLD_STEPS: u32 = 6;
 pub const STEP_ACROSS_UP: f32 = 30.0; // how far up Kitty steps when walking from one limb onto another
 pub const KITTY_FOOT_REACH: f32 = 27.0;
 pub const KITTY_WEIGHT: f32 = 38000.0;
 pub const LANDING_TOLERANCE: f32 = 12.0;
-pub const LANDING_KICK: f32 = 0.06;
-pub const JUMP_KICK: f32 = 1.2;
-pub const PANIC_SPEED: f32 = 20.0;
+/// Landing, her legs take her weight over this many steps rather than all at once.
+pub const LANDING_STEPS: u32 = 8;
+pub const PANIC_SPEED: f32 = 32.0; // falling faster than a full leap comes down
 pub const WIND_DRIFT: f32 = 0.3; // px per step per unit of breeze while airborne
-/// Jumping while the branch underfoot springs upward adds this much of its speed to the jump.
-pub const SPRING_BOOST: f32 = 1.6;
-pub const SPRING_BOOST_MAX: f32 = 7.0;
+
+// Branches as trampolines. Pushing off loses `LEAP_LOSS` x the limb's give into bending it (the
+// limb whips down by `PUSH_KICK` x the lost speed), and she keeps `SURFACE_CARRY` of the speed
+// the wood under her paws is moving up (or down) at. Landing braced (still holding the jump)
+// drives her whole impact into the limb, so it throws her back up; landing relaxed, her legs
+// soak up most of it.
+pub const LEAP_LOSS: f32 = 0.4;
+pub const PUSH_KICK: f32 = 0.3;
+pub const SURFACE_CARRY: f32 = 1.0;
+pub const LANDING_KICK: f32 = 0.3;
+pub const RELAXED_LANDING: f32 = 0.4;
+/// A bounce (landing braced back on the limb she leapt from) at terminal speed on solid wood jolts
+/// it with this many times Kitty's weight (scaled by the square of the speed); any other landing,
+/// braced or not, jolts it with `RELAXED_LANDING` of that. Give softens it by up to
+/// `IMPACT_SOFTEN`. A share of a bounce's jolt lingers as fatigue in the wood, fading over
+/// `FATIGUE_FADE` seconds, and adds to the next landing's jolt.
+pub const IMPACT_LOAD: f32 = 3.0;
+pub const IMPACT_SOFTEN: f32 = 0.5;
+pub const FATIGUE_SHARE: f32 = 0.12;
+pub const FATIGUE_FADE: f32 = 7.0;
+/// Sag under Kitty's weight (px) that counts as a limb's full give.
+pub const FULL_GIVE_SAG: f32 = 60.0;
+/// The wood under a charging Kitty rising faster than this (px/step): a release now would ride
+/// the rebound, so her ring glows.
+pub const SWEET_SPOT_SPEED: f32 = 1.5;
+/// Kicks bigger than this (px per sub-step) shake leaves loose.
+pub const SHAKE_KICK: f32 = 0.6;
+
+// Dropping through a limb: it, and anything within `DROP_SKIP_NEAR` px of where she started,
+// can't catch her until she's `DROP_CLEAR` px lower or `DROP_STEPS` have passed. That's far enough
+// that her raised paws are past it too, so she doesn't catch it as it goes by. A fork or parent
+// joined to it can't catch her less than `DROP_JOINED_NEAR` px below where she started.
+pub const DROP_SPEED: f32 = 1.0;
+pub const DROP_SKIP_NEAR: f32 = 16.0;
+pub const DROP_JOINED_NEAR: f32 = 40.0;
+pub const DROP_CLEAR: f32 = KITTY_BOX.1;
+pub const DROP_STEPS: u32 = 40;
+/// Standing at a tip that bends in under her, her inner paw stays this far inside it.
+pub const TIP_GRIP: f32 = 2.0;
 
 // Hanging & climbing
 pub const GRAB_REACH: f32 = 22.0;
+pub const GRAB_KICK: f32 = 0.36;
 pub const GRIP_DEPTH: f32 = 4.0;
 pub const HANG_SHIMMY: f32 = 2.0;
 pub const CLIMB_STEPS: u32 = 33;
@@ -77,8 +134,17 @@ pub const BRANCH_STURDY_DEPTH: (f32, f32) = (30.0, 38.0);
 pub const BRANCH_THIN_DEPTH: (f32, f32) = (22.0, 26.0);
 pub const THIN_BRANCH_CHANCE: f32 = 0.3;
 pub const THIN_BRANCH_STRENGTH: (f32, f32) = (1.15, 1.3);
+/// Sturdy branches and forks (x Kitty's weight): Kitty and two dogs stand on one safely, but
+/// bouncing on it too hard snaps it partway along, leaving a stub (see `limb::STUB_SHARE`). The
+/// goal limb never snaps.
+pub const STURDY_BRANCH_STRENGTH: f32 = 3.0;
+/// Each path branch is at most this far above the one below, and this far across from it.
 pub const MAX_BRANCH_GAP: f32 = 360.0;
 pub const MAX_BRANCH_HOP: f32 = 150.0;
+/// And at most this far across from it once sturdy ones snap as short as they can (see
+/// `limb::STUB_SHARE`): further than a whole branch's tip can be, as a stub's stiff end launches
+/// Kitty better, but never two stubs pointing at each other from trees on either side of another.
+pub const MAX_STUB_HOP: f32 = 200.0;
 pub const FILLERS_PER_PATH_BRANCH: usize = 2;
 pub const BRANCH_SEGMENT_LEN: f32 = 18.0;
 pub const BRANCH_SUB_STEPS: usize = 8;
