@@ -185,6 +185,9 @@ pub async fn run() {
             screen_gen = game.screen_gen;
             input.ignore_current();
             pending = Pending::default();
+            if let Some(world) = game.world.as_mut() {
+                world.kitty.forget_input();
+            }
         }
         // Also notices the app being put away (Home, a call, a system dialog, a hidden browser
         // tab), so play can pause instead of carrying on without the player

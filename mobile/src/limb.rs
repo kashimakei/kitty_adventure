@@ -20,6 +20,7 @@ pub struct Attachment {
 }
 
 /// A leaf cluster or twig drawn on a limb, positioned relative to one of its top nodes.
+#[derive(Clone)]
 struct Decoration {
     sprite: &'static str,
     node: usize,
@@ -40,17 +41,21 @@ pub struct LimbSpec {
     pub rise: f32,
     /// Total weight it holds before snapping; 0 never snaps.
     pub strength: f32,
+    /// Young wood that gives out under Kitty and a dog together (drawn paler, fewer leaves).
+    pub thin: bool,
     pub tree: usize,
     pub trunk_half: f32,
     pub attachment: Option<Attachment>,
     pub seed: u64,
 }
 
+#[derive(Clone)]
 pub struct Limb {
     pub branch: Branch,
     pub direction: f32,
     pub length: f32,
     pub thickness: f32,
+    pub thin: bool,
     pub tree: usize,
     pub trunk_half: f32,
     pub attachment: Option<Attachment>,
@@ -63,7 +68,22 @@ pub struct Limb {
     pub is_goal: bool,
     /// The last tip height, to tell how fast the limb is springing up or down.
     last_surface: Vec<f32>,
+    /// Give where it was measured (see `calibrate_give`), how far out from the base that was,
+    /// and, for a fork, the give its parent adds at the base.
+    give_measured: f32,
+    give_reach: f32,
+    give_base: f32,
+    /// Strain left in the wood by hard, braced landings (bouncing on it), fading slowly. It counts
+    /// with the load toward snapping, so bouncing too hard again and again breaks a limb that no
+    /// single landing would.
+    fatigue: f32,
 }
+
+/// Measuring a limb's give: Kitty's weight this far along the walkable span, held this many
+/// steps, with the sag averaged over the last few (the limb is still swaying a little).
+const GIVE_PROBE: f32 = 0.85;
+const GIVE_PROBE_STEPS: usize = 90;
+const GIVE_PROBE_AVERAGE: usize = 30;
 
 const FOLIAGE_GREEN: [&str; 6] = ["green_0", "green_1", "green_2", "green_3", "green_4", "green_5"];
 const FOLIAGE_AUTUMN: [&str; 6] = ["autumn_0", "autumn_1", "autumn_2", "autumn_3", "autumn_4", "autumn_5"];
@@ -86,6 +106,7 @@ impl Limb {
             direction: spec.direction,
             length: spec.length,
             thickness: spec.thickness,
+            thin: spec.thin,
             tree: spec.tree,
             trunk_half: spec.trunk_half,
             attachment: spec.attachment,
@@ -95,6 +116,10 @@ impl Limb {
             just_snapped: false,
             is_goal: false,
             last_surface: Vec::new(),
+            give_measured: 0.0,
+            give_reach: 1.0,
+            give_base: 0.0,
+            fatigue: 0.0,
         };
         limb.remember_surface();
         limb
@@ -119,7 +144,43 @@ impl Limb {
 
     /// 0 when unloaded, 1 at the point of snapping.
     pub fn strain(&self) -> f32 {
-        if self.breakable() { self.branch.stress / self.branch.strength } else { 0.0 }
+        if self.breakable() { (self.branch.stress + self.fatigue) / self.branch.strength } else { 0.0 }
+    }
+
+    /// A hard landing: a sudden extra load on top of the weight resting on the limb, of which
+    /// `fatigue` lingers in the wood.
+    pub fn jolt(&mut self, force: f32, fatigue: f32) {
+        self.branch.apply_jolt(force);
+        self.fatigue += fatigue;
+    }
+
+    /// Measure how far the limb sags with Kitty standing near its tip, on a copy so the level
+    /// itself is untouched. `base_give` is what a fork's parent adds where the fork grows out.
+    pub fn calibrate_give(&mut self, base_give: f32) {
+        let (lo, hi) = self.walk_range();
+        let x = if self.direction > 0.0 { lo + (hi - lo) * GIVE_PROBE } else { hi - (hi - lo) * GIVE_PROBE };
+        let mut probe = self.clone();
+        let mut rng = Rng::new(0x61FE);
+        let rest = probe.surface_y(x).unwrap_or(0.0);
+        let mut sag = 0.0;
+        for step in 0..GIVE_PROBE_STEPS {
+            probe.branch.apply_load(x, KITTY_WEIGHT);
+            probe.step(0.0, 0.0, None, &mut rng);
+            if step >= GIVE_PROBE_STEPS - GIVE_PROBE_AVERAGE {
+                sag += probe.surface_y(x).map_or(0.0, |y| y - rest) / GIVE_PROBE_AVERAGE as f32;
+            }
+        }
+        self.give_measured = sag.max(0.0) / FULL_GIVE_SAG;
+        self.give_reach = ((x - self.base().x) * self.direction).max(1.0);
+        self.give_base = base_give;
+    }
+
+    /// How much the limb yields under Kitty at `x`, 0 (solid, by the trunk) to 1 (a whippy
+    /// tip): her push loses that much of its power into bending the wood. Like a beam fixed at
+    /// one end, the sag grows with the cube of the distance from the trunk.
+    pub fn give_at(&self, x: f32) -> f32 {
+        let reach = ((x - self.base().x) * self.direction).max(0.0) / self.give_reach;
+        (self.give_base + self.give_measured * reach.powi(3)).min(1.0)
     }
 
     /// For forks: where the parent's attach node is, so the first step only moves the base by
@@ -142,6 +203,14 @@ impl Limb {
         self.branch.apply_force(0.0, gust);
         let was_broken = self.broken();
         self.branch.update_physics(BRANCH_SUB_STEPS, STEP, BRANCH_GRAVITY, BRANCH_DAMPING);
+        // The engine snaps a limb that's carrying too much; worn by bouncing, it gives out sooner
+        self.fatigue *= 1.0 - STEP / FATIGUE_FADE;
+        if self.breakable() && !self.broken() && self.branch.stress + self.fatigue > self.branch.strength {
+            self.branch.snap();
+        }
+        if self.broken() {
+            self.fatigue = 0.0;
+        }
         self.just_snapped = self.broken() && !was_broken;
     }
 
@@ -214,7 +283,7 @@ impl Limb {
     /// Scatter leaf clusters and twigs along the limb. `autumn` is the share of autumn leaves.
     pub fn decorate(&mut self, rng: &mut Rng, autumn: f32) {
         let segments = self.segments();
-        let thin = self.breakable();
+        let thin = self.thin;
         let pick = |rng: &mut Rng, sizes: std::ops::RangeInclusive<usize>| {
             let size = rng.int(*sizes.start() as i32, *sizes.end() as i32) as usize;
             if rng.chance(autumn) { FOLIAGE_AUTUMN[size] } else { FOLIAGE_GREEN[size] }
@@ -628,7 +697,7 @@ struct Palette {
 impl Palette {
     fn for_limb(limb: &Limb) -> Self {
         // Thin limbs that can snap are young wood: paler, with a hint of green
-        let (light, fill, shade) = if limb.breakable() {
+        let (light, fill, shade) = if limb.thin {
             (BARK_YOUNG_LIGHT, BARK_YOUNG, BARK_YOUNG_SHADE)
         } else {
             (BARK_LIGHT, BARK, BARK_SHADE)
@@ -830,7 +899,7 @@ fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh) {
         });
         mesh.fan((fillet.corner, PLAIN, fillet.colors[2]), rim);
     }
-    // Cracks in an overloaded thin limb, drawn over the wood
+    // Cracks in an overloaded limb, drawn over the wood
     let strained: Vec<&Limb> = family.iter().map(|&id| &limbs[id]).filter(|l| l.strain() > 0.5 && !l.broken()).collect();
     if !strained.is_empty() {
         mesh.flush();

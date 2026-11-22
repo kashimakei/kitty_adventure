@@ -12,7 +12,7 @@ use crate::rng::Rng;
 use crate::sprites::{Animator, Assets, Clip};
 
 /// Pushes on the branch underfoot (Kitty is 38000): a thin branch holds Kitty or a dog, not both.
-const WEIGHT: f32 = 18000.0;
+pub const WEIGHT: f32 = 18000.0;
 const WALK_SPEED: f32 = 45.0; // px/s sniffing along, scaled by the level's dog speed
 const CHARGE_SPEED: f32 = 190.0; // px/s galloping at Kitty
 const GRAVITY: f32 = 1800.0; // px/s^2
@@ -24,7 +24,7 @@ const HOP_DOWN: f32 = 70.0; // px out from where it stood that a dog jumping dow
 const EXPLORE_REACH: f32 = 30.0; // px ahead along a branch overhead it hops up to
 /// Catching a branch: px it may spring up past the falling dog's feet and still hold it.
 const LAND_CATCH: f32 = 4.0;
-const LAND_KICK: f32 = LANDING_KICK * 8.0;
+const LAND_KICK: f32 = 0.48;
 const SIGHT: f32 = 260.0; // px; Kitty this close on the same level gets snarled at, then chased
 const SAME_LEVEL: f32 = 45.0; // px between feet that still counts as the same level
 const SNARL_TIME: f32 = 0.5; // seconds of snarling before the charge: the player's cue

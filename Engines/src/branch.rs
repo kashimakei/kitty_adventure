@@ -59,6 +59,7 @@ const REFERENCE_LENGTH: f32 = 220.0;
 const BREAK_RESPONSE: f32 = 0.3;
 
 #[cfg_attr(feature = "python", pyclass(get_all, set_all))]
+#[derive(Clone)]
 pub struct Branch {
     pub nodes: Vec<Node>,
     pub constraints: Vec<Constraint>,
@@ -351,6 +352,13 @@ impl Branch {
 }
 
 impl Branch {
+    /// A sudden blow, such as something landing hard: adds straight to the stress, which then
+    /// eases back toward the sustained load. The next `update_physics` snaps the branch if that
+    /// takes it past its strength. (Rust only; the Python bindings don't use it.)
+    pub fn apply_jolt(&mut self, force: f32) {
+        self.stress += force;
+    }
+
     /// Fraction along top segment `i` at which it crosses world `x`, if it does.
     fn segment_t(&self, i: usize, x: f32) -> Option<f32> {
         let xa = self.nodes[i].pos.x;

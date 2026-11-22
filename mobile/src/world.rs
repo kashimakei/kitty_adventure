@@ -18,9 +18,6 @@ use crate::sprites::Assets;
 use crate::story::{self, Friend};
 use crate::tree::{self, Tree};
 
-/// How far the slider must go before Kitty, who only walks at one speed so far, sets off.
-const WALK_THRESHOLD: f32 = 0.1;
-
 /// What happened during a step that the game flow cares about.
 #[derive(PartialEq)]
 pub enum Outcome {
@@ -148,19 +145,10 @@ impl World {
         }
     }
 
-    /// Apply loads and jolts; weight on a fork also bears on its parent.
+    /// Apply loads, kicks and jolts; a hard kick shakes a few leaves loose.
     fn apply(&mut self, pushes: Vec<Push>) {
-        for push in pushes {
-            match push {
-                Push::Load { limb, x, weight } => load_limb(&mut self.limbs, limb, x, weight),
-                Push::Kick { limb, x, speed } => {
-                    self.limbs[limb].kick(x, speed);
-                    if speed > 0.6 {
-                        let at = vec2(x, self.limbs[limb].surface_y(x).unwrap_or(self.kitty.y));
-                        self.effects.shake_leaves(at, 2, &mut self.rng);
-                    }
-                }
-            }
+        for at in apply_pushes(&mut self.limbs, pushes) {
+            self.effects.shake_leaves(at, 2, &mut self.rng);
         }
     }
 
@@ -195,25 +183,13 @@ impl World {
         }
         self.elapsed += STEP;
 
-        // Kitty: for now a press jumps at once and holding climbs higher, as before the
-        // charge jump; the slider walks at full speed past a small threshold
-        if controls.press {
-            self.kitty.do_jump(&self.limbs);
-            if self.kitty.jumped {
-                self.sfx.push(Sfx::Jump);
-            }
+        let kitty = step_kitty(&mut self.kitty, &mut self.limbs, controls, self.breeze);
+        if kitty.jumped {
+            self.sfx.push(Sfx::Jump);
         }
-        if !controls.charge_held {
-            self.kitty.stop_jump();
+        for at in kitty.shakes {
+            self.effects.shake_leaves(at, 2, &mut self.rng);
         }
-        if controls.drop {
-            self.kitty.let_go(false);
-        }
-        let (left, right) = (controls.move_x < -WALK_THRESHOLD, controls.move_x > WALK_THRESHOLD);
-        self.kitty.step(left, right, self.breeze);
-        self.kitty.resolve(&self.limbs);
-        let pushes = std::mem::take(&mut self.kitty.pushes);
-        self.apply(pushes);
 
         self.step_limbs();
 
@@ -288,6 +264,8 @@ impl World {
         // Reaching the friend's nest
         if self.kitty.standing_on == Some(Support::Limb(self.goal)) && (self.kitty.x - self.nest_position().x).abs() < 70.0 {
             self.rescued = true;
+            // She sits and waits now, whatever was held
+            self.kitty.forget_input();
             self.sfx.push(Sfx::Rescue);
             self.effects.sparkle(self.nest_position() - vec2(0.0, 40.0));
             return Outcome::Rescued;
@@ -428,7 +406,10 @@ impl World {
         for acorn in &self.projectiles {
             acorn.draw(assets);
         }
+        // The charge ring wraps round her: its far half behind her, its near half in front
+        self.kitty.draw_ring(kitty_offset, self.time, false);
         self.kitty.draw(assets, kitty_offset);
+        self.kitty.draw_ring(kitty_offset, self.time, true);
         for enemy in self.enemies.iter().filter(|e| e.in_front()) {
             enemy.draw(assets);
         }
@@ -465,7 +446,10 @@ pub fn build_limbs(plan: &LevelPlan, rng: &mut Rng) -> Vec<Limb> {
             stiffness: b.stiffness,
             gnarl: b.gnarl,
             rise: 0.0,
-            strength: b.strength,
+            // The plan only sets a strength for thin branches; sturdy ones are far stronger but
+            // can still be snapped by bouncing on them too hard
+            strength: if b.strength > 0.0 { b.strength } else { STURDY_BRANCH_STRENGTH * KITTY_WEIGHT },
+            thin: b.strength > 0.0,
             tree: b.tree,
             trunk_half: half,
             attachment: None,
@@ -488,7 +472,8 @@ pub fn build_limbs(plan: &LevelPlan, rng: &mut Rng) -> Vec<Limb> {
             stiffness: fork.stiffness,
             gnarl: fork.gnarl,
             rise: fork.rise,
-            strength: 0.0,
+            strength: STURDY_BRANCH_STRENGTH * KITTY_WEIGHT,
+            thin: false,
             tree: parent.tree,
             trunk_half: 0.0,
             attachment: Some(Attachment { parent: fork.parent, node }),
@@ -497,6 +482,14 @@ pub fn build_limbs(plan: &LevelPlan, rng: &mut Rng) -> Vec<Limb> {
         limb.track_anchor(parent.top_point(node));
         limb.settle();
         limbs.push(limb);
+    }
+    // How much each limb gives under Kitty, measured against its own sag; forks also ride on
+    // their parent's bend
+    for i in 0..limbs.len() {
+        let base_give = limbs[i].attachment.map_or(0.0, |a| {
+            limbs[a.parent].give_at(limbs[a.parent].top_point(a.node).x) * FORK_LOAD_SHARE
+        });
+        limbs[i].calibrate_give(base_give);
     }
     limbs
 }
@@ -507,6 +500,55 @@ pub fn step_limbs(limbs: &mut [Limb], breeze: f32, time: f32, rng: &mut Rng) {
     for i in 0..limbs.len() {
         let anchor = limbs[i].attachment.map(|a| limbs[a.parent].top_point(a.node));
         limbs[i].step(breeze, time, anchor, rng);
+    }
+}
+
+/// What a step of Kitty did that the world makes sounds and leaves fly for.
+#[derive(Default)]
+pub struct KittyStep {
+    pub jumped: bool,
+    pub landed: Option<Support>,
+    /// Where a limb took a kick hard enough to shake leaves loose.
+    pub shakes: Vec<Vec2>,
+}
+
+/// One step of Kitty: her jump and drop input, moving, then riding, catching or landing on
+/// whatever is under her, with her weight and kicks passed on to the limbs (which the caller
+/// steps afterwards). World and the physics tests both go through here.
+pub fn step_kitty(kitty: &mut Kitty, limbs: &mut [Limb], controls: &Controls, breeze: f32) -> KittyStep {
+    kitty.input(controls, limbs);
+    kitty.step(controls.move_x, breeze);
+    let landed = kitty.resolve(limbs);
+    let shakes = apply_pushes(limbs, std::mem::take(&mut kitty.pushes));
+    KittyStep { jumped: kitty.jumped, landed, shakes }
+}
+
+/// Apply loads, kicks and jolts (a fork passes some of its load and jolts on to its parent).
+/// Returns where a kick was hard enough to shake leaves loose.
+pub fn apply_pushes(limbs: &mut [Limb], pushes: Vec<Push>) -> Vec<Vec2> {
+    let mut shakes = Vec::new();
+    for push in pushes {
+        match push {
+            Push::Load { limb, x, weight } => load_limb(limbs, limb, x, weight),
+            Push::Kick { limb, x, speed } => {
+                limbs[limb].kick(x, speed);
+                if speed > SHAKE_KICK {
+                    if let Some(y) = limbs[limb].surface_y(x) {
+                        shakes.push(vec2(x, y));
+                    }
+                }
+            }
+            Push::Jolt { limb, force, fatigue } => jolt_limb(limbs, limb, force, fatigue),
+        }
+    }
+    shakes
+}
+
+/// A hard landing's jolt; like weight, a fork passes most of it on to its parent.
+pub fn jolt_limb(limbs: &mut [Limb], limb: LimbId, force: f32, fatigue: f32) {
+    limbs[limb].jolt(force, fatigue);
+    if let Some(Attachment { parent, .. }) = limbs[limb].attachment {
+        limbs[parent].jolt(force * FORK_LOAD_SHARE, fatigue * FORK_LOAD_SHARE);
     }
 }
 

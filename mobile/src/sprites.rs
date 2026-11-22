@@ -111,6 +111,12 @@ impl Sprites {
 
     /// Draw scaled and rotated (radians) about the anchor.
     pub fn draw_ex(&self, name: &str, at: Vec2, facing: f32, scale: f32, rotation: f32, tint: Color) {
+        self.draw_stretched(name, at, facing, Vec2::splat(scale), rotation, tint);
+    }
+
+    /// Draw scaled by different amounts across and down (to squash), rotated (radians) about the
+    /// anchor.
+    pub fn draw_stretched(&self, name: &str, at: Vec2, facing: f32, scale: Vec2, rotation: f32, tint: Color) {
         let frame = self.get(name);
         let anchor = frame.anchor_for(facing) * scale;
         let size = frame.size() * scale;
