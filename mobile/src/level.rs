@@ -25,7 +25,10 @@ pub struct Difficulty {
     pub max_crows: usize,
     pub crow_interval: (f32, f32),
     pub eagles: bool,
+    /// Eagles in the sky at once, and in the whole level (lives lost included).
     pub max_eagles: usize,
+    pub eagles_per_level: usize,
+    /// The wait (s) before the first eagle, and after each one has gone before the next.
     pub eagle_interval: (f32, f32),
     pub eagle_speed: f32,
 }
@@ -51,7 +54,8 @@ pub fn difficulty(level: usize, lap: usize) -> Difficulty {
         max_crows: if level >= 5 { 2 } else { 1 },
         crow_interval: (4.0 * eagle_wait.max(0.6), 8.0 * eagle_wait.max(0.6)),
         eagles: level >= 5 || lap > 0,
-        max_eagles: if old_level >= 8.0 { 2 } else { 1 },
+        max_eagles: 1,
+        eagles_per_level: 5,
         eagle_interval: (5.0 * eagle_wait, 10.0 * eagle_wait),
         eagle_speed: 1.0 + 0.06 * (old_level - 4.0).max(0.0),
     }

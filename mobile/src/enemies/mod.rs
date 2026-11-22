@@ -140,6 +140,8 @@ pub struct Spawner {
     dog_timer: f32,
     crow_timer: f32,
     eagle_timer: f32,
+    /// Eagles still to come this level.
+    eagles_left: usize,
 }
 
 impl Spawner {
@@ -148,6 +150,7 @@ impl Spawner {
             dog_timer: d.dog_interval * rng.range(0.5, 1.5),
             crow_timer: rng.pair(d.crow_interval),
             eagle_timer: rng.pair(d.eagle_interval),
+            eagles_left: d.eagles_per_level,
         }
     }
 
@@ -181,14 +184,15 @@ impl Spawner {
                 }
             }
         }
-        if d.eagles {
+        // The wait for the next eagle only runs while there's room in the sky, so one that's just
+        // gone is never followed straight away by the next
+        if d.eagles && self.eagles_left > 0 && count_of(enemies, Kind::Eagle) < d.max_eagles {
             self.eagle_timer -= dt;
             if self.eagle_timer <= 0.0 {
                 self.eagle_timer = rng.pair(d.eagle_interval);
-                if count_of(enemies, Kind::Eagle) < d.max_eagles {
-                    let y = rng.range(view.top() + 100.0, view.top() + view.h / 2.0);
-                    enemies.push(Box::new(eagle::Eagle::new(rng.chance(0.5), y, view, kitty, d.eagle_speed)));
-                }
+                self.eagles_left -= 1;
+                let y = rng.range(view.top() + 100.0, view.top() + view.h / 2.0);
+                enemies.push(Box::new(eagle::Eagle::new(rng.chance(0.5), y, view, kitty, d.eagle_speed)));
             }
         }
     }
