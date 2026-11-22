@@ -1003,7 +1003,6 @@ fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh) {
         limbs[id].add_pieces(id, &mut pieces);
     }
     // A fork's base sits inside its parent's wood; keep its underside tucked in there too
-    let first_piece = |pieces: &[(LimbId, Piece)], id: LimbId| pieces.iter().position(|(l, _)| *l == id);
     let mut forks = Vec::new();
     for i in 0..pieces.len() {
         let id = pieces[i].0;
@@ -1011,7 +1010,7 @@ fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh) {
         if first_piece(&pieces, id) != Some(i) {
             continue;
         }
-        if let Some(p) = first_piece(&pieces, attachment.parent).filter(|&p| p < i) {
+        if let Some(p) = parent_piece(limbs, &pieces, attachment).filter(|&p| p < i) {
             let (before, after) = pieces.split_at_mut(i);
             let way = Emerges::find(&after[0].1, &before[p].1);
             tuck_under(&mut after[0].1, &before[p].1, way, limbs[id].thickness);
@@ -1074,6 +1073,21 @@ fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh) {
             limb.draw_cracks();
         }
     }
+}
+
+/// The first of limb `id`'s pieces.
+fn first_piece(pieces: &[(LimbId, Piece)], id: LimbId) -> Option<usize> {
+    pieces.iter().position(|(l, _)| *l == id)
+}
+
+/// The piece of a fork's parent that holds the node the fork grows from: the stub, or the whole
+/// limb, unless the parent snapped between the trunk and the fork, when the fork goes down with
+/// the piece that broke off (see `Limb::add_pieces` for the order).
+fn parent_piece(limbs: &[Limb], pieces: &[(LimbId, Piece)], attachment: Attachment) -> Option<usize> {
+    let first = first_piece(pieces, attachment.parent)?;
+    let outer = limbs[attachment.parent].branch.broken_at.is_some_and(|seg| seg < attachment.node);
+    let p = if outer { first + 1 } else { first };
+    pieces.get(p).is_some_and(|(l, _)| *l == attachment.parent).then_some(p)
 }
 
 /// The dark outline: the piece grown outward by `OUTLINE` all round.
@@ -1347,4 +1361,71 @@ fn walk(edge: &[Vec2], seg: usize, from: Vec2, dist: f32, forward: bool) -> Vec2
         }
     }
     at
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fork that goes down with its parent is joined to the piece it falls with, not the stub
+    /// left on the tree, so its root still fades into the wood it grows from (at most a sample at
+    /// the edge of the fade shows whole). One left on the stub stays joined to the stub.
+    #[test]
+    fn a_fallen_fork_blends_into_the_piece_it_fell_with() {
+        let mut checked = 0;
+        for level in 1..=5 {
+            for seed in 0..2 {
+                let plan = crate::level::generate(level, 0, seed);
+                let mut rng = Rng::new(seed ^ 0xC0FFEE);
+                let base = crate::world::build_limbs(&plan, &mut rng);
+                for fork in (0..base.len()).filter(|&i| base[i].attachment.is_some()) {
+                    let attachment = base[fork].attachment.unwrap();
+                    let parent = attachment.parent;
+                    // Snapped just inside the fork, and as short as it can (past most forks)
+                    for at_fork in [true, false] {
+                        let mut limbs = base.clone();
+                        if at_fork {
+                            let branch = &mut limbs[parent].branch;
+                            branch.snap_distance = (attachment.node as f32 - 0.5) * branch.segment_len;
+                            branch.snap();
+                        } else {
+                            let at = limbs[parent].base().x;
+                            limbs[parent].snap_at(at);
+                        }
+                        for step in 0..12 {
+                            crate::world::step_limbs(&mut limbs, 0.0, step as f32 * STEP, &mut rng);
+                        }
+                        let fell = limbs[fork].fallen;
+                        assert_eq!(fell, limbs[parent].branch.broken_at.unwrap() < attachment.node);
+                        let mut pieces = Vec::new();
+                        limbs[parent].add_pieces(parent, &mut pieces);
+                        limbs[fork].add_pieces(fork, &mut pieces);
+                        // The piece of the parent the fork grows out of: the one that broke off, or the stub
+                        let parent_pieces: Vec<usize> = (0..pieces.len()).filter(|&i| pieces[i].0 == parent).collect();
+                        let grows_from = if fell { *parent_pieces.last().unwrap() } else { parent_pieces[0] };
+                        let (f, p) = (first_piece(&pieces, fork).unwrap(), parent_piece(&limbs, &pieces, attachment).unwrap());
+                        let context = format!("level {level} seed {seed} fork {fork} fell {fell}");
+                        assert_eq!(p, grows_from, "{context}");
+                        let way = Emerges::find(&pieces[f].1, &pieces[p].1);
+                        let (before, after) = pieces.split_at_mut(f);
+                        tuck_under(&mut after[0].1, &before[p].1, way, limbs[fork].thickness);
+                        for (_, piece) in &mut pieces {
+                            piece.finish();
+                        }
+                        let palettes: Vec<Palette> = pieces.iter().map(|(id, _)| Palette::for_limb(&limbs[*id])).collect();
+                        let join = join(&pieces[f].1, &pieces[p].1, (f, p), way, limbs[fork].thickness, &palettes);
+                        let root = &pieces[f].1;
+                        let opaque = (0..root.top.len())
+                            .take_while(|&k| root.along[k] - root.along[0] < join.blend.1)
+                            .map(|k| (k, root.top[k].lerp(root.bottom[k], 0.5)))
+                            .filter(|&(k, at)| inside(&pieces[grows_from].1, at) && join.opacity(root, &pieces[p].1, k, at) >= 0.999)
+                            .count();
+                        assert!(opaque <= 1, "{context}: {opaque} samples of the root drawn whole inside the parent");
+                        checked += fell as usize;
+                    }
+                }
+            }
+        }
+        assert!(checked > 20, "only {checked} forks fell");
+    }
 }

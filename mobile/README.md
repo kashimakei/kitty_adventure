@@ -105,11 +105,12 @@ mobile/
                     (slider, hold and release, swipe down) as pure logic the tests drive
     platform.rs     Android hooks over JNI (screen density, going to the background)
     hud.rs story.rs audio.rs save.rs items.rs effects.rs parallax.rs rng.rs consts.rs
-  tests/            physics.rs (Kitty's jumps on the branches, and that every level can be
-                    climbed with single leaps), climbable.rs (a search over the physics that
-                    every level can be climbed whatever its seed, even with the path's sturdy
-                    branches snapped; `cargo test --release --test climbable -- --ignored`
-                    sweeps 48 seeds in a few minutes), touch.rs (gestures), squirrel.rs
+  tests/            physics.rs (Kitty's jumps on the branches, snapping limbs and forks, and
+                    that every level can be climbed with single leaps), climbable.rs (a search
+                    over the physics that every level can be climbed whatever its seed, even
+                    with the path's sturdy branches snapped short and its thin ones snapped off;
+                    `cargo test --release --test climbable -- --ignored` sweeps 48 seeds in a
+                    few minutes), touch.rs (gestures), squirrel.rs
   web/              index.html and macroquad's JS loader for the web build
   android/          the Gradle project
     app/build.gradle.kts            app settings and the cargo-ndk build

@@ -3,9 +3,9 @@
 //! and `step_limb`, without the graphics): from the ground, and from a few standing spots on each
 //! limb Kitty gets to, she tries charged leaps of a few strengths steered across each limb within
 //! reach, walks off either end, and drops through. Wherever she ends up standing (or hanging, and
-//! then climbing up) she can get to. A level can be climbed if that gets her to the goal, both as
-//! generated and with every sturdy path branch snapped as short as a snap can leave it, all at
-//! once.
+//! then climbing up) she can get to. A level can be climbed if that gets her to the goal, as
+//! generated, with every sturdy path branch snapped as short as a snap can leave it, with every
+//! thin one snapped off, and with both, all at once.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -96,8 +96,40 @@ fn wood(limb: &Limb) -> Option<(f32, f32, f32, f32)> {
     }))
 }
 
-/// A level to search: its limbs (settled, and maybe with the path's sturdy branches snapped), and
-/// which are the goal and the path.
+/// Which of the path's branches are snapped before the search, all at once: none, the sturdy ones
+/// (as short as a snap can leave them), the thin ones (which leave nothing), or both.
+#[derive(Clone, Copy, PartialEq)]
+enum Snapped {
+    None,
+    Sturdy,
+    Thin,
+    Both,
+}
+
+impl Snapped {
+    const ALL: [Snapped; 4] = [Snapped::None, Snapped::Sturdy, Snapped::Thin, Snapped::Both];
+
+    fn snaps(self, limb: &Limb) -> bool {
+        limb.breakable() && match self {
+            Snapped::None => false,
+            Snapped::Sturdy => !limb.thin,
+            Snapped::Thin => limb.thin,
+            Snapped::Both => true,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Snapped::None => "as generated",
+            Snapped::Sturdy => "with the path's sturdy branches snapped",
+            Snapped::Thin => "with its thin branches snapped",
+            Snapped::Both => "with both snapped",
+        }
+    }
+}
+
+/// A level to search: its limbs (settled, and maybe with some of the path's branches snapped),
+/// and which are the goal and the path.
 struct Level {
     limbs: Vec<Limb>,
     goal: usize,
@@ -106,13 +138,13 @@ struct Level {
 }
 
 impl Level {
-    fn new(level: usize, lap: usize, seed: u64, snapped: bool) -> Self {
+    fn new(level: usize, lap: usize, seed: u64, snapped: Snapped) -> Self {
         let plan = level::generate(level, lap, seed);
         let mut rng = Rng::new(seed ^ 0xC0FFEE);
         let mut limbs = build_limbs(&plan, &mut rng);
         let path = plan.branches.iter().take_while(|b| b.on_path).count();
-        if snapped {
-            for limb in limbs.iter_mut().take(path).filter(|l| l.breakable() && !l.thin) {
+        if snapped != Snapped::None {
+            for limb in limbs.iter_mut().take(path).filter(|l| snapped.snaps(l)) {
                 let base = limb.base().x;
                 limb.snap_at(base);
             }
@@ -424,11 +456,20 @@ impl<'a> Search<'a> {
     }
 }
 
-/// Search levels 1-5, laps 0-1 and `seeds`, as generated and with the sturdy path branches
-/// snapped, on every core. Returns the levels she can't climb in each.
-fn sweep(seeds: &[u64]) -> [Vec<String>; 2] {
-    let cases: Vec<(usize, usize, u64, bool)> = (1..=5)
-        .flat_map(|level| (0..2).flat_map(move |lap| seeds.iter().flat_map(move |&seed| [false, true].map(|snapped| (level, lap, seed, snapped)))))
+/// Search levels 1-5, laps 0-1 and `seeds`, each with the path's branches snapped as each of
+/// `configs` says, on every core (but not a level with no thin path branches with them snapped,
+/// which would be the same search again). Returns the levels she can't climb, for each of
+/// `Snapped::ALL`.
+fn sweep(seeds: &[u64], configs: &[Snapped]) -> [Vec<String>; 4] {
+    let has_thin = |level: usize, lap: usize, seed: u64| {
+        level::generate(level, lap, seed).branches.iter().take_while(|b| b.on_path).any(|b| b.strength > 0.0)
+    };
+    let cases: Vec<(usize, usize, u64, usize)> = (1..=5)
+        .flat_map(|level| (0..2).flat_map(move |lap| seeds.iter().flat_map(move |&seed| (0..Snapped::ALL.len()).map(move |k| (level, lap, seed, k)))))
+        .filter(|&(level, lap, seed, k)| {
+            let snapped = Snapped::ALL[k];
+            configs.contains(&snapped) && (!matches!(snapped, Snapped::Thin | Snapped::Both) || has_thin(level, lap, seed))
+        })
         .collect();
     let next = AtomicUsize::new(0);
     let started = Instant::now();
@@ -438,14 +479,15 @@ fn sweep(seeds: &[u64]) -> [Vec<String>; 2] {
             let mut results = Vec::new();
             loop {
                 let i = next.fetch_add(1, Ordering::Relaxed);
-                let Some(&(level, lap, seed, snapped)) = cases.get(i) else { break };
+                let Some(&(level, lap, seed, k)) = cases.get(i) else { break };
                 let t = Instant::now();
+                let snapped = Snapped::ALL[k];
                 let plan = Level::new(level, lap, seed, snapped);
                 let climb = Search::new(&plan).climb();
                 let name = format!("L{level} lap {lap} seed {seed}");
                 if !climb.goal {
-                    println!("{name}{}: can't climb past path branch {:?} of {} ({} leaps, {:.1} s)",
-                             if snapped { " snapped" } else { "" }, climb.highest, plan.path, climb.leaps, t.elapsed().as_secs_f32());
+                    println!("{name} {}: can't climb past path branch {:?} of {} ({} leaps, {:.1} s)",
+                             snapped.name(), climb.highest, plan.path, climb.leaps, t.elapsed().as_secs_f32());
                 }
                 results.push((i, climb.goal, name));
             }
@@ -453,32 +495,38 @@ fn sweep(seeds: &[u64]) -> [Vec<String>; 2] {
         })).collect();
         runs.into_iter().map(|run| run.join().unwrap()).collect()
     });
-    let mut failed = [Vec::new(), Vec::new()];
+    let mut failed: [Vec<String>; 4] = Default::default();
     for (i, climbed, name) in results.into_iter().flatten() {
         if !climbed {
-            failed[cases[i].3 as usize].push(name);
+            failed[cases[i].3].push(name);
         }
     }
-    let total = cases.len() / 2;
-    println!("{} seeds, {:.0} s: {} of {total} can't be climbed as generated, {} of {total} with the path's sturdy branches snapped",
-             seeds.len(), started.elapsed().as_secs_f32(), failed[0].len(), failed[1].len());
+    let counts: Vec<String> = (0..Snapped::ALL.len()).filter(|&k| configs.contains(&Snapped::ALL[k])).map(|k| {
+        let total = cases.iter().filter(|case| case.3 == k).count();
+        format!("{} of {total} {}", failed[k].len(), Snapped::ALL[k].name())
+    }).collect();
+    println!("{} seeds, {:.0} s: can't be climbed: {}", seeds.len(), started.elapsed().as_secs_f32(), counts.join(", "));
     failed
 }
 
-/// Every level can be climbed on a handful of seeds (ones where a filler overhead catches the
-/// leaps for the first path branch, or a single leap doesn't get past a stub), as generated and
-/// with the path's sturdy branches snapped short.
-#[test]
-fn every_level_can_be_climbed() {
-    let failed = sweep(&[4, 7, 8, 10]);
-    assert!(failed.iter().all(|f| f.is_empty()), "can't be climbed: {:?} as generated, {:?} snapped", failed[0], failed[1]);
+fn assert_climbable(failed: &[Vec<String>; 4]) {
+    let failures: Vec<String> = Snapped::ALL.iter().zip(failed).filter(|(_, f)| !f.is_empty()).map(|(s, f)| format!("{} {f:?}", s.name())).collect();
+    assert!(failures.is_empty(), "can't be climbed: {}", failures.join("; "));
 }
 
-/// The same over many more seeds: `cargo test --release --test climbable -- --ignored --nocapture`.
+/// Every level can be climbed on a handful of seeds (ones where a filler overhead catches the
+/// leaps for the first path branch, or a single leap doesn't get past a stub), as generated, with
+/// the path's sturdy branches snapped short, and with its thin ones snapped off as well.
+#[test]
+fn every_level_can_be_climbed() {
+    assert_climbable(&sweep(&[4, 7, 8, 10], &[Snapped::None, Snapped::Sturdy, Snapped::Both]));
+}
+
+/// The same over many more seeds, and with only the thin ones snapped too:
+/// `cargo test --release --test climbable -- --ignored --nocapture`.
 #[test]
 #[ignore]
 fn every_level_can_be_climbed_whatever_the_seed() {
     let seeds: Vec<u64> = (0..48).collect();
-    let failed = sweep(&seeds);
-    assert!(failed.iter().all(|f| f.is_empty()), "can't be climbed: {:?} as generated, {:?} snapped", failed[0], failed[1]);
+    assert_climbable(&sweep(&seeds, &Snapped::ALL));
 }

@@ -120,11 +120,16 @@ fn joined(limbs: &[Limb], a: LimbId, b: LimbId) -> bool {
 }
 
 /// Dropping through a limb (or falling from one that gave way): which one, the limbs that can't
-/// catch her (it, and any level with her as she left), the height she left at, and steps since.
+/// catch her (it, and any level with her as she left), whether the fork or parent it joins can't
+/// either, the height she left at, and steps since.
 #[derive(Clone)]
 struct DropThrough {
     limb: LimbId,
     skip: Vec<LimbId>,
+    /// Whether the wood joined to the limb (a fork, or its parent) can't catch her either until
+    /// she's well below it: so when she drops through on purpose, but not when the limb gives way
+    /// (the whole parent under a fork that snapped still catches her).
+    skip_joined: bool,
     from_y: f32,
     steps: u32,
 }
@@ -421,7 +426,7 @@ impl Kitty {
             let feet = self.feet();
             let level = |other: &Limb| other.surface_under(&feet).is_some_and(|s| (s - self.y).abs() <= DROP_SKIP_NEAR);
             let skip = (0..limbs.len()).filter(|&other| other == id || level(&limbs[other])).collect();
-            self.drop_through = Some(DropThrough { limb: id, skip, from_y: self.y, steps: 0 });
+            self.drop_through = Some(DropThrough { limb: id, skip, skip_joined: true, from_y: self.y, steps: 0 });
             self.dropping = true;
         }
     }
@@ -498,11 +503,13 @@ impl Kitty {
 
     /// Dropping through a limb: it, and anything level with where she left it, can't catch her,
     /// nor can the fork or parent it joins until she's well below (that wood springs up as her
-    /// weight comes off it, and a fork's base is hidden inside its parent).
+    /// weight comes off it, and a fork's base is hidden inside its parent). Falling from a limb
+    /// that gave way, only it can't.
     fn passes_through(&self, limbs: &[Limb], support: Support, surface: f32) -> bool {
         match (&self.drop_through, support) {
             (Some(drop), Support::Limb(id)) => {
-                drop.skip.contains(&id) || (joined(limbs, id, drop.limb) && surface < drop.from_y + DROP_JOINED_NEAR)
+                drop.skip.contains(&id)
+                    || (drop.skip_joined && joined(limbs, id, drop.limb) && surface < drop.from_y + DROP_JOINED_NEAR)
             }
             _ => false,
         }
@@ -693,8 +700,10 @@ impl Kitty {
             let Some(s) = limb.surface_y(self.x) else { continue };
             // Too low to hang from (her feet would be in the ground), or part of what she's
             // dropping through: also the fork or parent it joins, so she doesn't catch the
-            // wood she just left
-            let through = self.drop_through.as_ref().is_some_and(|drop| drop.skip.contains(&id) || joined(limbs, id, drop.limb));
+            // wood she just left (but a whole parent can catch her when a fork gives way)
+            let through = self.drop_through.as_ref().is_some_and(|drop| {
+                drop.skip.contains(&id) || (drop.skip_joined && joined(limbs, id, drop.limb))
+            });
             if s - GRIP_DEPTH + KITTY_BOX.1 >= GROUND_Y || through {
                 continue;
             }
@@ -708,6 +717,10 @@ impl Kitty {
                 self.leapt_from = None;
                 self.just_grabbed = true;
                 self.buffered = None;
+                // Caught: what she dropped through (or fell from) is behind her. Left in place, it
+                // would sit unstepped while she hangs and climbs, then stop her landing back on
+                // that wood soon after
+                self.drop_through = None;
                 if self.charge.take().is_some() {
                     self.climb_wait = Some(0);
                     self.hold_carry = true;
@@ -771,10 +784,11 @@ impl Kitty {
 
     /// The limb she was on or holding gave way: she goes down in a panic with the piece that fell.
     /// What's left of it (a stub, springing back up as it loses that piece and her weight) can't
-    /// catch her, as if she were dropping through it, until she's well below it.
+    /// catch her, as if she were dropping through it, until she's well below it. Any other wood
+    /// can, even the fork or parent it joins: a fork that snaps drops her onto its parent.
     fn fall_with(&mut self, id: LimbId) {
         self.panicking = true;
-        self.drop_through = Some(DropThrough { limb: id, skip: vec![id], from_y: self.y, steps: 0 });
+        self.drop_through = Some(DropThrough { limb: id, skip: vec![id], skip_joined: false, from_y: self.y, steps: 0 });
     }
 
     /// Take a hit from something at `from_x`. Returns false while still blinking from the last.

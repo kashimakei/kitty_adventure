@@ -88,6 +88,12 @@ fn gap_between(a: (f32, f32), b: (f32, f32)) -> f32 {
     (a.0.max(b.0) - a.1.min(b.1)).max(0.0)
 }
 
+/// A path branch's x-extent whole, and as short as it can snap.
+type Spans = ((f32, f32), (f32, f32));
+
+/// The ground, for reach: Kitty can stand anywhere on it.
+const GROUND_SPAN: (f32, f32) = (0.0, WORLD_W);
+
 pub struct BranchPlan {
     pub tree: usize,
     pub direction: f32,
@@ -143,6 +149,7 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
     let slots = branch_slots(tree_xs.len());
     // Branches stop short of the neighbouring trunk instead of poking through it
     let max_length = tree_xs[1] - tree_xs[0] - TRUNK_WIDTH / 2.0 - 25.0;
+    let shortest = BRANCH_LENGTH.0.min(max_length);
     let path_len = 10 + level.min(3);
 
     // Gaps first, so each path branch knows how far it is to the one above
@@ -167,9 +174,17 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
     let mut prev_span = (WORLD_W / 2.0 - 50.0, WORLD_W / 2.0 + 50.0);
     // What's sure to be left of the one below: a sturdy branch can snap, leaving a stub
     let mut prev_kept = prev_span;
+    // Over a thin branch, which can snap away entirely: the one under it (whole, and as short as
+    // it can snap), which the next one up must be within reach of too
+    let mut under_thin: Option<Spans> = None;
     let mut last_slot = None;
     let mut y = 10.0;
     let mut branches = Vec::new();
+    // Within reach of a branch below, as it is and once both have snapped as short as they can
+    let within = |s: (usize, f32), length: f32, kept: f32, (whole, stub): Spans| {
+        gap_between(span(&tree_xs, s, length), whole) <= MAX_BRANCH_HOP
+            && gap_between(span(&tree_xs, s, kept), stub) <= MAX_STUB_HOP
+    };
     for (i, &gap) in gaps.iter().enumerate() {
         y -= gap;
         let target = targets[i / 4];
@@ -180,8 +195,8 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
         let reachable: Vec<(usize, f32)> = slots.iter().copied()
             .filter(|&s| {
                 Some(s) != last_slot
-                    && gap_between(span(&tree_xs, s, length), prev_span) <= MAX_BRANCH_HOP
-                    && gap_between(span(&tree_xs, s, kept), prev_kept) <= MAX_STUB_HOP
+                    && within(s, length, kept, (prev_span, prev_kept))
+                    && under_thin.is_none_or(|under| within(s, length, kept, under))
             })
             .collect();
         let slot = if rng.chance(0.7) {
@@ -193,9 +208,18 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
         } else {
             *rng.pick(&reachable)
         };
-        // A thin branch can snap, so only make one where Kitty could climb past it without it
-        let thin = !is_last && rng.chance(THIN_BRANCH_CHANCE) && gap + gaps[i + 1] <= MAX_BRANCH_GAP;
+        // A thin branch can snap away, so only make one where Kitty could climb past it without it:
+        // never right over another, and only where the next one up can be within a jump of the one
+        // below (or of the ground, where she can stand anywhere), whole or snapped as short as it
+        // can. Checked for the shortest the next one can be: a longer one only reaches further.
+        let below = if i == 0 { (GROUND_SPAN, GROUND_SPAN) } else { (prev_span, prev_kept) };
+        let thin = !is_last && rng.chance(THIN_BRANCH_CHANCE) && under_thin.is_none() && gap + gaps[i + 1] <= MAX_BRANCH_GAP && {
+            let whole = span(&tree_xs, slot, length);
+            let next_kept = if i + 2 == path_len { shortest } else { shortest * STUB_SHARE.0 };
+            slots.iter().any(|&s| s != slot && within(s, shortest, next_kept, (whole, whole)) && within(s, shortest, next_kept, below))
+        };
         branches.push(new_branch(&mut rng, &d, slot, y, length, thin, true, is_last));
+        under_thin = thin.then_some(below);
         prev_span = span(&tree_xs, slot, length);
         // A thin one snaps at the trunk, and then the path climbs past it
         prev_kept = span(&tree_xs, slot, if thin { length } else { kept });
@@ -319,7 +343,10 @@ mod tests {
     use super::*;
 
     /// Every generated level has one goal, and each path branch is within a jump of the one below,
-    /// even once sturdy ones have snapped as short as they can.
+    /// even once sturdy ones have snapped as short as they can. Thin ones, which can snap away
+    /// entirely, are never one right over another, and the path branches either side of each are
+    /// within a jump of each other too (the first one's from the ground, where Kitty can stand
+    /// anywhere), whole or snapped short.
     #[test]
     fn levels_are_climbable() {
         for level in 1..=STORY_LEVELS {
@@ -328,17 +355,37 @@ mod tests {
                     let plan = generate(level, lap, seed);
                     assert_eq!(plan.branches.iter().filter(|b| b.goal).count(), 1);
                     let path: Vec<&BranchPlan> = plan.branches.iter().filter(|b| b.on_path).collect();
-                    let mut below = (WORLD_W / 2.0 - 50.0, WORLD_W / 2.0 + 50.0, 10.0);
-                    let mut below_kept = (below.0, below.1);
-                    for b in path {
-                        let s = span(&plan.tree_xs, (b.tree, b.direction), b.length);
+                    let context = format!("level {level} lap {lap} seed {seed}");
+                    // (x-extent whole, as short as it can snap, height), for where Kitty starts and for
+                    // the ground
+                    let start = (WORLD_W / 2.0 - 50.0, WORLD_W / 2.0 + 50.0);
+                    let spawn = (start, start, 10.0);
+                    let ground = (GROUND_SPAN, GROUND_SPAN, 10.0);
+                    let reach = |b: &BranchPlan| {
                         let sturdy = b.strength == 0.0 && !b.goal;
+                        let whole = span(&plan.tree_xs, (b.tree, b.direction), b.length);
+                        // A thin one never leaves a stub: it's whole or gone
                         let kept = span(&plan.tree_xs, (b.tree, b.direction), b.length * if sturdy { STUB_SHARE.0 } else { 1.0 });
-                        assert!(below.2 - b.y <= MAX_BRANCH_GAP + 1.0, "gap too tall: level {level} lap {lap} seed {seed}");
-                        assert!(gap_between(s, (below.0, below.1)) <= MAX_BRANCH_HOP + 1.0);
-                        assert!(gap_between(kept, below_kept) <= MAX_STUB_HOP + 1.0, "stubs too far apart: level {level} lap {lap} seed {seed}");
-                        below = (s.0, s.1, b.y);
-                        below_kept = kept;
+                        (whole, kept, b.y)
+                    };
+                    let within = |(whole, kept, y): ((f32, f32), (f32, f32), f32), below: ((f32, f32), (f32, f32), f32)| {
+                        below.2 - y <= MAX_BRANCH_GAP + 1.0
+                            && gap_between(whole, below.0) <= MAX_BRANCH_HOP + 1.0
+                            && gap_between(kept, below.1) <= MAX_STUB_HOP + 1.0
+                    };
+                    let mut below = spawn;
+                    // The nearest path branch below that isn't thin, or the ground
+                    let mut sure = ground;
+                    for (k, b) in path.iter().enumerate() {
+                        let thin = b.strength > 0.0;
+                        assert!(within(reach(b), below), "{context}: path branch {k} out of reach of the one below");
+                        if thin {
+                            assert!(k == 0 || path[k - 1].strength == 0.0, "{context}: thin path branches {} and {k} in a row", k - 1);
+                        } else {
+                            assert!(within(reach(b), sure), "{context}: path branch {k} out of reach past the thin one below");
+                            sure = reach(b);
+                        }
+                        below = reach(b);
                     }
                     for item in &plan.items {
                         assert!(item.limb < plan.branches.len() + plan.forks.len());
