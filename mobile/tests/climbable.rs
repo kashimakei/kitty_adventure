@@ -14,10 +14,10 @@ use std::time::Instant;
 use kitty_mobile::consts::*;
 use kitty_mobile::input::Controls;
 use kitty_mobile::kitty::{Kitty, Support};
-use kitty_mobile::level;
+use kitty_mobile::level::{self, LevelSpec};
 use kitty_mobile::limb::Limb;
 use kitty_mobile::rng::Rng;
-use kitty_mobile::world::{breeze_at, build_limbs, step_kitty, step_limb};
+use kitty_mobile::world::{breeze_at, build_level, step_kitty, step_limb};
 use macroquad::prelude::*;
 
 /// Standing spots tried along each limb, from the trunk out.
@@ -138,10 +138,8 @@ struct Level {
 }
 
 impl Level {
-    fn new(level: usize, lap: usize, seed: u64, snapped: Snapped) -> Self {
-        let plan = level::generate(level, lap, seed);
-        let mut rng = Rng::new(seed ^ 0xC0FFEE);
-        let mut limbs = build_limbs(&plan, &mut rng);
+    fn new(spec: &LevelSpec, seed: u64, snapped: Snapped) -> Self {
+        let (plan, mut limbs, mut rng) = build_level(spec, seed);
         let path = plan.branches.iter().take_while(|b| b.on_path).count();
         if snapped != Snapped::None {
             for limb in limbs.iter_mut().take(path).filter(|l| snapped.snaps(l)) {
@@ -155,7 +153,7 @@ impl Level {
             }
         }
         let goal = limbs.iter().position(|l| l.is_goal).unwrap();
-        Self { limbs, goal, path, wind: level::difficulty(level, lap).wind }
+        Self { limbs, goal, path, wind: spec.difficulty.wind }
     }
 }
 
@@ -462,7 +460,7 @@ impl<'a> Search<'a> {
 /// `Snapped::ALL`.
 fn sweep(seeds: &[u64], configs: &[Snapped]) -> [Vec<String>; 4] {
     let has_thin = |level: usize, lap: usize, seed: u64| {
-        level::generate(level, lap, seed).branches.iter().take_while(|b| b.on_path).any(|b| b.strength > 0.0)
+        level::generate(&level::endless(level, lap), seed).branches.iter().take_while(|b| b.on_path).any(|b| b.strength > 0.0)
     };
     let cases: Vec<(usize, usize, u64, usize)> = (1..=5)
         .flat_map(|level| (0..2).flat_map(move |lap| seeds.iter().flat_map(move |&seed| (0..Snapped::ALL.len()).map(move |k| (level, lap, seed, k)))))
@@ -482,7 +480,7 @@ fn sweep(seeds: &[u64], configs: &[Snapped]) -> [Vec<String>; 4] {
                 let Some(&(level, lap, seed, k)) = cases.get(i) else { break };
                 let t = Instant::now();
                 let snapped = Snapped::ALL[k];
-                let plan = Level::new(level, lap, seed, snapped);
+                let plan = Level::new(&level::endless(level, lap), seed, snapped);
                 let climb = Search::new(&plan).climb();
                 let name = format!("L{level} lap {lap} seed {seed}");
                 if !climb.goal {

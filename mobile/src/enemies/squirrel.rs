@@ -327,10 +327,10 @@ const TUMBLE_FADE: f32 = 50.0;
 const HURT_TINT: Color = Color::new(1.0, 0.5, 0.45, 1.0);
 const HURT_FLASH: f32 = 0.15;
 
-/// The level's general pace: 1 on the first level, rising to about 1.9 on the hardest laps.
-/// Difficulty has no knobs for the small enemies, so they follow the dogs' speed ramp.
+/// The level's general pace for the small enemies: 1 on the first level, rising to about 1.9 on
+/// the hardest.
 pub(super) fn pace(d: &Difficulty) -> f32 {
-    d.dog_speed.max(1.0)
+    d.pace.max(1.0)
 }
 
 pub(super) fn hurt_tint(time_hurt: f32) -> Color {

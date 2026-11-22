@@ -11,7 +11,7 @@ use crate::enemies::{self, Enemy, EnemyCtx, KittyView, Projectile, Sfx, Spawner}
 use crate::input::Controls;
 use crate::items::{Item, ItemKind};
 use crate::kitty::{Kitty, Push, Support};
-use crate::level::{self, Difficulty, LevelPlan};
+use crate::level::{self, Difficulty, LevelPlan, LevelSpec};
 use crate::limb::{self, Attachment, Limb, LimbId, LimbSpec};
 use crate::rng::Rng;
 use crate::sprites::Assets;
@@ -66,10 +66,9 @@ pub struct World {
 
 impl World {
     pub fn new(level: usize, lap: usize, seed: u64) -> Self {
-        let plan = level::generate(level, lap, seed);
-        let difficulty = level::difficulty(level, lap);
-        let mut rng = Rng::new(seed ^ 0xC0FFEE);
-        let mut limbs = build_limbs(&plan, &mut rng);
+        let spec = level::endless(level, lap);
+        let (plan, mut limbs, mut rng) = build_level(&spec, seed);
+        let difficulty = spec.difficulty;
         for limb in &mut limbs {
             limb.decorate(&mut rng, difficulty.autumn);
         }
@@ -420,6 +419,15 @@ impl World {
     pub fn top_y(&self) -> f32 {
         self.top_y
     }
+}
+
+/// A level's plan and settled limbs, and the random stream that goes on to decorate it. The game
+/// and the climb tests both build levels through here.
+pub fn build_level(spec: &LevelSpec, seed: u64) -> (LevelPlan, Vec<Limb>, Rng) {
+    let plan = level::generate(spec, seed);
+    let mut rng = Rng::new(seed ^ 0xC0FFEE);
+    let limbs = build_limbs(&plan, &mut rng);
+    (plan, limbs, rng)
 }
 
 /// The level's limbs: branches first, then forks, which need their parent's shape to know where

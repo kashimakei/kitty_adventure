@@ -31,6 +31,24 @@ pub struct Difficulty {
     /// The wait (s) before the first eagle, and after each one has gone before the next.
     pub eagle_interval: (f32, f32),
     pub eagle_speed: f32,
+    /// How lively squirrels, snakes and crows are: their waits between throws, strikes and dives
+    /// shorten by this.
+    pub pace: f32,
+}
+
+/// What laying out a level and filling it with critters takes, besides its seed.
+#[derive(Clone)]
+pub struct LevelSpec {
+    /// Branches on the way up, the last one the goal.
+    pub path_len: usize,
+    /// Hearts tucked on filler branches.
+    pub hearts: usize,
+    pub difficulty: Difficulty,
+}
+
+/// A level of the endless climb: `level` 1..=5 of the five-level ramp, on its `lap`.
+pub fn endless(level: usize, lap: usize) -> LevelSpec {
+    LevelSpec { path_len: 10 + level.min(3), hearts: 1 + level / 3, difficulty: difficulty(level, lap) }
 }
 
 /// `level` is 1..=5; each pass through the story after the first (`lap`) gets harder.
@@ -58,6 +76,7 @@ pub fn difficulty(level: usize, lap: usize) -> Difficulty {
         eagles_per_level: 5,
         eagle_interval: (5.0 * eagle_wait, 10.0 * eagle_wait),
         eagle_speed: 1.0 + 0.06 * (old_level - 4.0).max(0.0),
+        pace: 1.0 + 0.08 * climb,
     }
 }
 
@@ -146,15 +165,15 @@ pub struct LevelPlan {
     pub top_y: f32,
 }
 
-pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
+pub fn generate(spec: &LevelSpec, seed: u64) -> LevelPlan {
     let mut rng = Rng::new(seed);
-    let d = difficulty(level, lap);
+    let d = &spec.difficulty;
     let tree_xs = tree_positions();
     let slots = branch_slots(tree_xs.len());
     // Branches stop short of the neighbouring trunk instead of poking through it
     let max_length = tree_xs[1] - tree_xs[0] - TRUNK_WIDTH / 2.0 - 25.0;
     let shortest = BRANCH_LENGTH.0.min(max_length);
-    let path_len = 10 + level.min(3);
+    let path_len = spec.path_len;
 
     // Gaps first, so each path branch knows how far it is to the one above
     let gaps: Vec<f32> = (0..path_len)
@@ -222,7 +241,7 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
             let next_kept = if i + 2 == path_len { shortest } else { shortest * STUB_SHARE.0 };
             slots.iter().any(|&s| s != slot && within(s, shortest, next_kept, (whole, whole)) && within(s, shortest, next_kept, below))
         };
-        branches.push(new_branch(&mut rng, &d, slot, y, length, thin, true, is_last));
+        branches.push(new_branch(&mut rng, d, slot, y, length, thin, true, is_last));
         under_thin = thin.then_some(below);
         prev_span = span(&tree_xs, slot, length);
         // A thin one snaps at the trunk, and then the path climbs past it
@@ -238,7 +257,7 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
             let slot = *rng.pick(&slots);
             let length = rng.pair(BRANCH_LENGTH).min(max_length);
             let thin = rng.chance(THIN_BRANCH_CHANCE);
-            let filler = new_branch(&mut rng, &d, slot, fy, length, thin, false, false);
+            let filler = new_branch(&mut rng, d, slot, fy, length, thin, false, false);
             let room = branches.iter().all(|b: &BranchPlan| {
                 gap_between(span(&tree_xs, (filler.tree, filler.direction), filler.length),
                             span(&tree_xs, (b.tree, b.direction), b.length)) >= 40.0
@@ -290,7 +309,7 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
         items.push(ItemPlan { kind: ItemKind::Gold, limb: branches.len() + k, frac: 0.8 });
     }
     let mut fillers: Vec<usize> = (0..branches.len()).filter(|&i| !branches[i].on_path && branches[i].strength == 0.0).collect();
-    for _ in 0..(1 + level / 3) {
+    for _ in 0..spec.hearts {
         if !fillers.is_empty() {
             let limb = fillers.swap_remove(rng.int(0, fillers.len() as i32 - 1) as usize);
             items.push(ItemPlan { kind: ItemKind::Heart, limb, frac: rng.range(0.5, 0.85) });
@@ -320,6 +339,51 @@ pub fn generate(level: usize, lap: usize, seed: u64) -> LevelPlan {
     LevelPlan { tree_xs, branches, forks, items, squirrel_spots, snake_spots, top_y }
 }
 
+/// A hash of everything a plan lays out (to a thousandth of a pixel), so tests can pin a level's
+/// layout and notice when a change to `generate` reshuffles it.
+pub fn fingerprint(plan: &LevelPlan) -> u64 {
+    // FNV-1a
+    struct Hash(u64);
+    impl Hash {
+        fn int(&mut self, value: i64) {
+            for byte in value.to_le_bytes() {
+                self.0 = (self.0 ^ byte as u64).wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        fn float(&mut self, value: f32) {
+            self.int((value * 1000.0).round() as i64);
+        }
+    }
+    let mut hash = Hash(0xcbf2_9ce4_8422_2325);
+    for &x in &plan.tree_xs {
+        hash.float(x);
+    }
+    for b in &plan.branches {
+        hash.int(b.tree as i64);
+        for v in [b.direction, b.y, b.length, b.thickness, b.stiffness, b.gnarl, b.strength] {
+            hash.float(v);
+        }
+        hash.int(b.on_path as i64 * 2 + b.goal as i64);
+    }
+    for f in &plan.forks {
+        hash.int(f.parent as i64);
+        for v in [f.node_frac, f.length, f.rise, f.thickness, f.stiffness, f.gnarl] {
+            hash.float(v);
+        }
+    }
+    for item in &plan.items {
+        hash.int(item.kind as i64);
+        hash.int(item.limb as i64);
+        hash.float(item.frac);
+    }
+    for &(limb, frac) in plan.squirrel_spots.iter().chain(&plan.snake_spots) {
+        hash.int(limb as i64);
+        hash.float(frac);
+    }
+    hash.float(plan.top_y);
+    hash.0
+}
+
 #[allow(clippy::too_many_arguments)]
 fn new_branch(rng: &mut Rng, d: &Difficulty, (tree, direction): (usize, f32), y: f32, length: f32,
               thin: bool, on_path: bool, goal: bool) -> BranchPlan {
@@ -342,60 +406,94 @@ fn new_branch(rng: &mut Rng, d: &Difficulty, (tree, direction): (usize, f32), y:
     }
 }
 
+/// Checks a plan has one goal and a path Kitty can always climb: each path branch within a jump of
+/// the one below, even once sturdy ones have snapped as short as they can. Thin ones, which can
+/// snap away entirely, are never one right over another, and the path branches either side of
+/// each are within a jump of each other too (the first one's from the ground, where Kitty can stand
+/// anywhere), whole or snapped short.
+pub fn check_plan(plan: &LevelPlan) -> Result<(), String> {
+    let goals = plan.branches.iter().filter(|b| b.goal).count();
+    if goals != 1 {
+        return Err(format!("{goals} goals"));
+    }
+    // (x-extent whole, as short as it can snap, height), for where Kitty starts and for the ground
+    let start = (WORLD_W / 2.0 - 50.0, WORLD_W / 2.0 + 50.0);
+    let spawn = (start, start, 10.0);
+    let ground = (GROUND_SPAN, GROUND_SPAN, 10.0);
+    let reach = |b: &BranchPlan| {
+        let sturdy = b.strength == 0.0 && !b.goal;
+        let whole = span(&plan.tree_xs, (b.tree, b.direction), b.length);
+        // A thin one never leaves a stub: it's whole or gone
+        let kept = span(&plan.tree_xs, (b.tree, b.direction), b.length * if sturdy { STUB_SHARE.0 } else { 1.0 });
+        (whole, kept, b.y)
+    };
+    let within = |(whole, kept, y): ((f32, f32), (f32, f32), f32), below: ((f32, f32), (f32, f32), f32)| {
+        below.2 - y <= MAX_BRANCH_GAP + 1.0
+            && gap_between(whole, below.0) <= MAX_BRANCH_HOP + 1.0
+            && gap_between(kept, below.1) <= MAX_STUB_HOP + 1.0
+    };
+    let path: Vec<&BranchPlan> = plan.branches.iter().filter(|b| b.on_path).collect();
+    let mut below = spawn;
+    // The nearest path branch below that isn't thin, or the ground
+    let mut sure = ground;
+    for (k, b) in path.iter().enumerate() {
+        let thin = b.strength > 0.0;
+        if !within(reach(b), below) {
+            return Err(format!("path branch {k} out of reach of the one below"));
+        }
+        if thin {
+            if k > 0 && path[k - 1].strength > 0.0 {
+                return Err(format!("thin path branches {} and {k} in a row", k - 1));
+            }
+        } else {
+            if !within(reach(b), sure) {
+                return Err(format!("path branch {k} out of reach past the thin one below"));
+            }
+            sure = reach(b);
+        }
+        below = reach(b);
+    }
+    if let Some(item) = plan.items.iter().find(|item| item.limb >= plan.branches.len() + plan.forks.len()) {
+        return Err(format!("an item on limb {}, which doesn't exist", item.limb));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Every generated level has one goal, and each path branch is within a jump of the one below,
-    /// even once sturdy ones have snapped as short as they can. Thin ones, which can snap away
-    /// entirely, are never one right over another, and the path branches either side of each are
-    /// within a jump of each other too (the first one's from the ground, where Kitty can stand
-    /// anywhere), whole or snapped short.
     #[test]
     fn levels_are_climbable() {
         for level in 1..=STORY_LEVELS {
             for lap in 0..4 {
                 for seed in 0..200 {
-                    let plan = generate(level, lap, seed);
-                    assert_eq!(plan.branches.iter().filter(|b| b.goal).count(), 1);
-                    let path: Vec<&BranchPlan> = plan.branches.iter().filter(|b| b.on_path).collect();
-                    let context = format!("level {level} lap {lap} seed {seed}");
-                    // (x-extent whole, as short as it can snap, height), for where Kitty starts and for
-                    // the ground
-                    let start = (WORLD_W / 2.0 - 50.0, WORLD_W / 2.0 + 50.0);
-                    let spawn = (start, start, 10.0);
-                    let ground = (GROUND_SPAN, GROUND_SPAN, 10.0);
-                    let reach = |b: &BranchPlan| {
-                        let sturdy = b.strength == 0.0 && !b.goal;
-                        let whole = span(&plan.tree_xs, (b.tree, b.direction), b.length);
-                        // A thin one never leaves a stub: it's whole or gone
-                        let kept = span(&plan.tree_xs, (b.tree, b.direction), b.length * if sturdy { STUB_SHARE.0 } else { 1.0 });
-                        (whole, kept, b.y)
-                    };
-                    let within = |(whole, kept, y): ((f32, f32), (f32, f32), f32), below: ((f32, f32), (f32, f32), f32)| {
-                        below.2 - y <= MAX_BRANCH_GAP + 1.0
-                            && gap_between(whole, below.0) <= MAX_BRANCH_HOP + 1.0
-                            && gap_between(kept, below.1) <= MAX_STUB_HOP + 1.0
-                    };
-                    let mut below = spawn;
-                    // The nearest path branch below that isn't thin, or the ground
-                    let mut sure = ground;
-                    for (k, b) in path.iter().enumerate() {
-                        let thin = b.strength > 0.0;
-                        assert!(within(reach(b), below), "{context}: path branch {k} out of reach of the one below");
-                        if thin {
-                            assert!(k == 0 || path[k - 1].strength == 0.0, "{context}: thin path branches {} and {k} in a row", k - 1);
-                        } else {
-                            assert!(within(reach(b), sure), "{context}: path branch {k} out of reach past the thin one below");
-                            sure = reach(b);
-                        }
-                        below = reach(b);
-                    }
-                    for item in &plan.items {
-                        assert!(item.limb < plan.branches.len() + plan.forks.len());
+                    if let Err(problem) = check_plan(&generate(&endless(level, lap), seed)) {
+                        panic!("level {level} lap {lap} seed {seed}: {problem}");
                     }
                 }
             }
+        }
+    }
+
+    /// Endless levels lay out exactly as the story's levels did before campaigns, so the physics and
+    /// climb tests' hand-picked seeds keep meaning what they did.
+    #[test]
+    fn endless_layouts_are_unchanged() {
+        for (level, lap, seed, expected) in [
+            (1, 0, 0, 0x73d5ecd17492ad52),
+            (1, 0, 4, 0x4fb349e8cc8a376a),
+            (2, 0, 7, 0xfbff454210abb518),
+            (3, 0, 8, 0xeea1b7e75f0efc11),
+            (4, 0, 10, 0x4ded502143f5395b),
+            (5, 0, 3, 0xd9c12e6b3de2c593),
+            (5, 1, 11, 0xfd3f912604227b52),
+            (3, 2, 42, 0x2162653d4360a7bd),
+            (1, 1, 99, 0x46f84f89e5cfa627),
+            (5, 3, 123, 0xf49799cf681a826a),
+            (2, 4, 5, 0x78d678d886bf5e06),
+        ] {
+            assert_eq!(fingerprint(&generate(&endless(level, lap), seed)), expected, "level {level} lap {lap} seed {seed}");
         }
     }
 }

@@ -12,7 +12,7 @@ use macroquad::prelude::*;
 /// Acorns thrown in `steps` by a squirrel partway along `limb`, with Kitty standing still at
 /// `dy` px above (negative) or below the squirrel's limb and `dx` px to one side.
 fn acorns_thrown(seed: u64, dx: f32, dy: f32, steps: usize) -> Option<usize> {
-    let plan = level::generate(1, 0, seed);
+    let plan = level::generate(&level::endless(1, 0), seed);
     let difficulty = level::difficulty(1, 0);
     let mut rng = Rng::new(seed);
     let limbs = build_limbs(&plan, &mut rng);

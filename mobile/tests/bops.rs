@@ -29,7 +29,7 @@ impl Sky {
 
     /// A level-4 tree, viewed with a sturdy limb's tip in the middle.
     fn tree(seed: u64) -> Option<Self> {
-        let plan = level::generate(4, 0, seed);
+        let plan = level::generate(&level::endless(4, 0), seed);
         let mut rng = Rng::new(seed);
         let limbs = build_limbs(&plan, &mut rng);
         let tip = limbs.iter()

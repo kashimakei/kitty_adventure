@@ -1375,9 +1375,7 @@ mod tests {
         let mut checked = 0;
         for level in 1..=5 {
             for seed in 0..2 {
-                let plan = crate::level::generate(level, 0, seed);
-                let mut rng = Rng::new(seed ^ 0xC0FFEE);
-                let base = crate::world::build_limbs(&plan, &mut rng);
+                let (_, base, mut rng) = crate::world::build_level(&crate::level::endless(level, 0), seed);
                 for fork in (0..base.len()).filter(|&i| base[i].attachment.is_some()) {
                     let attachment = base[fork].attachment.unwrap();
                     let parent = attachment.parent;

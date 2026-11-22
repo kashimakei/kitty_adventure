@@ -10,7 +10,7 @@ use kitty_mobile::kitty::{Kitty, Support};
 use kitty_mobile::level;
 use kitty_mobile::limb::{stub_segments, Attachment, Limb, LimbSpec};
 use kitty_mobile::rng::Rng;
-use kitty_mobile::world::{breeze_at, build_limbs, load_limb, step_kitty, step_limb, KittyStep};
+use kitty_mobile::world::{breeze_at, build_level, load_limb, step_kitty, step_limb, KittyStep};
 use macroquad::prelude::vec2;
 
 /// Limbs further above or below Kitty than this sit still in the tests.
@@ -31,11 +31,10 @@ struct Sim {
 
 impl Sim {
     fn new(level: usize, seed: u64) -> Self {
-        let plan = level::generate(level, 0, seed);
-        let mut rng = Rng::new(seed ^ 0xC0FFEE);
-        let limbs = build_limbs(&plan, &mut rng);
+        let spec = level::endless(level, 0);
+        let (plan, limbs, rng) = build_level(&spec, seed);
         let path = plan.branches.iter().take_while(|b| b.on_path).count();
-        Self { limbs, kitty: Kitty::new(WORLD_W / 2.0), rng, time: 0.0, wind: level::difficulty(level, 0).wind, path, peak_strain: 0.0 }
+        Self { limbs, kitty: Kitty::new(WORLD_W / 2.0), rng, time: 0.0, wind: spec.difficulty.wind, path, peak_strain: 0.0 }
     }
 
     /// Only branch `id` (not a fork), to watch Kitty and one limb with nothing else to land on.
