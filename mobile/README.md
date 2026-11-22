@@ -10,7 +10,7 @@ The same code runs on desktop, in the browser (wasm) and on Android. The branche
 physics as the pygame original in the repository root (`Engines/`, built here without its Python
 bindings), and the art and sounds come from `../assets`.
 
-Controls: on a phone, slide a thumb on the left half to walk and run (the further, the faster),
+Controls: on a phone, slide the bar at the bottom left to walk and run (the further, the faster),
 hold the right half to crouch and let go to pounce (a tap hops, or climbs up when hanging), and
 swipe down there to let go of a branch or drop through it; the II button or Back pauses. On a keyboard,
 arrows or A/D to run (Shift walks), hold and release Space/Up/W to pounce, Down/S to let go or

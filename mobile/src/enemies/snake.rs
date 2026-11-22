@@ -315,7 +315,7 @@ impl Enemy for Snake {
         self.mid_lunge() && assets.snake.strikes(self.anim.frame(), self.pos + self.offset, self.facing, body)
     }
 
-    fn stomp_box(&self, _assets: &Assets) -> Option<Rect> {
+    fn stomp_box(&self) -> Option<Rect> {
         (self.placed && self.healthy() && !self.mid_lunge()).then(|| faced(STOMP_AREA, self.pos, self.facing))
     }
 

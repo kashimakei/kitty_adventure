@@ -2,8 +2,9 @@
 //! player's intent comes out. No GL or window calls, so the tests drive it headless.
 //!
 //! A finger's job is fixed the moment it lands: the corner by the pause button pauses, the left
-//! half is a floating slider for walking and running, and the right half is the action finger
-//! (hold to charge, release to leap, swipe down to drop). It keeps that job wherever it wanders.
+//! half drives the slider bar fixed at the bottom left for walking and running, and the right half
+//! is the action finger (hold to charge, release to leap, swipe down to drop). It keeps that job
+//! wherever it wanders.
 //! Every edge is latched as its event arrives, so a tap whose down and up land in the same frame,
 //! or a down followed by a move before the game looks, still counts.
 
@@ -18,10 +19,16 @@ pub const PAUSE_ZONE_X: f32 = 540.0;
 pub const PAUSE_ZONE_Y: f32 = 130.0;
 /// Fingers landing left of this drive the slider; the rest are action fingers.
 pub const SLIDER_ZONE_X: f32 = 300.0;
+/// The slider bar, always in the same place at the bottom left: its middle, and how far the knob
+/// goes either way (full speed at the ends). A thumb anywhere on the left half takes the knob to
+/// its own x, so one landing a little off the bar still works.
+pub const SLIDER_CENTRE: Vec2 = Vec2::from_array([150.0, 1100.0]);
+pub const SLIDER_REACH: f32 = 115.0;
+// The whole bar, knob and all, sits on the left half
+const _: () = assert!(SLIDER_CENTRE.x - SLIDER_REACH >= 30.0 && SLIDER_CENTRE.x + SLIDER_REACH <= SLIDER_ZONE_X - 30.0);
 
-/// The slider ignores the first 1.5 mm (a resting thumb wobbles) and reaches full speed at 15 mm.
+/// The knob ignores the 1.5 mm either side of the middle (a resting thumb wobbles).
 pub const DEAD_ZONE_MM: f32 = 1.5;
-pub const FULL_SPEED_MM: f32 = 15.0;
 /// A swipe down: at least 7 mm within 150 ms, and steeper than it is wide by this factor.
 pub const SWIPE_MM: f32 = 7.0;
 pub const SWIPE_WINDOW: f64 = 0.150;
@@ -31,22 +38,17 @@ pub const SWIPE_STEEPNESS: f32 = 1.2;
 const MIN_SPEED: f32 = 0.2;
 /// Speeds this close to full count as full, so running doesn't need the thumb at the very end.
 const SNAP_TO_FULL: f32 = 0.95;
-/// The slider's centre trails a thumb that goes further than this many full-speed distances
-/// from it, so sliding back always slows down promptly.
-const TRAIL: f32 = 1.2;
 /// How long the landing ring and swipe chevron stay on screen, in seconds.
 pub const MARK_LIFE: f64 = 0.25;
 
 /// Sane bounds for each threshold in playfield units, whatever density the platform reports.
 const DEAD_ZONE_RANGE: (f32, f32) = (4.0, 24.0);
-const FULL_SPEED_RANGE: (f32, f32) = (50.0, 180.0);
 const SWIPE_RANGE: (f32, f32) = (28.0, 110.0);
 
 /// The gesture distances in playfield units for the current screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Thresholds {
     pub dead_zone: f32,
-    pub full_speed: f32,
     pub swipe: f32,
 }
 
@@ -57,7 +59,6 @@ impl Thresholds {
         let size = |mm: f32, (lo, hi): (f32, f32)| (mm * units_per_mm).max(lo).min(hi);
         Self {
             dead_zone: size(DEAD_ZONE_MM, DEAD_ZONE_RANGE),
-            full_speed: size(FULL_SPEED_MM, FULL_SPEED_RANGE),
             swipe: size(SWIPE_MM, SWIPE_RANGE),
         }
     }
@@ -103,9 +104,14 @@ struct Finger {
 /// The slider while a thumb holds it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Slider {
-    /// The centre: where the thumb landed, dragged along if the thumb goes far past full speed.
-    pub origin: Vec2,
     pub finger: Vec2,
+}
+
+impl Slider {
+    /// How far the knob is from the bar's middle: the thumb's, as far as the ends.
+    pub fn offset(&self) -> f32 {
+        (self.finger.x - SLIDER_CENTRE.x).clamp(-SLIDER_REACH, SLIDER_REACH)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -217,9 +223,9 @@ impl Recogniser {
             self.edges.pause = true;
             Role::Pause
         } else if pos.x < SLIDER_ZONE_X {
-            // The newest thumb on the left takes over the slider, centred where it lands
+            // The newest thumb on the left takes over the slider
             self.supersede(Role::Slider);
-            self.slider = Some(Slider { origin: pos, finger: pos });
+            self.slider = Some(Slider { finger: pos });
             Role::Slider
         } else {
             self.supersede(Role::Action);
@@ -235,13 +241,8 @@ impl Recogniser {
         let Some(index) = self.fingers.iter().position(|f| f.id == id) else { return };
         match self.fingers[index].role {
             Role::Slider => {
-                let reach = TRAIL * self.thresholds.full_speed;
                 if let Some(slider) = &mut self.slider {
                     slider.finger = pos;
-                    let dx = pos.x - slider.origin.x;
-                    if dx.abs() > reach {
-                        slider.origin.x = pos.x - reach.copysign(dx);
-                    }
                 }
             }
             Role::Action => self.track(index, pos, time),
@@ -312,12 +313,12 @@ impl Recogniser {
     /// -1..1 from the slider: nothing inside the dead zone, then from MIN_SPEED up to full.
     fn move_x(&self) -> f32 {
         let Some(slider) = self.slider else { return 0.0 };
-        let Thresholds { dead_zone, full_speed, .. } = self.thresholds;
-        let dx = slider.finger.x - slider.origin.x;
+        let dead_zone = self.thresholds.dead_zone;
+        let dx = slider.offset();
         if dx.abs() <= dead_zone {
             return 0.0;
         }
-        let along = ((dx.abs() - dead_zone) / (full_speed - dead_zone)).min(1.0);
+        let along = ((dx.abs() - dead_zone) / (SLIDER_REACH - dead_zone)).min(1.0);
         let speed = MIN_SPEED + (1.0 - MIN_SPEED) * along;
         if speed >= SNAP_TO_FULL { 1.0f32.copysign(dx) } else { speed.copysign(dx) }
     }

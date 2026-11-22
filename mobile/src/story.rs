@@ -130,8 +130,8 @@ impl Threat {
             Threat::Squirrels => "Cheeky squirrels toss acorns from the branches. Dodge them, or bop the squirrel from above!",
             Threat::Dogs => "Dogs patrol the ground and leap up at low branches. Bounce out of reach: hold as you land, let go as the ring glows blue!",
             Threat::Snakes => "Snakes lie coiled on branches and strike when you come close. Hop over them, or bop them on the head!",
-            Threat::Crows => "Crows flap overhead and dive beak-first! When one hovers, step aside just in time.",
-            Threat::Eagles => "Eagles sweep in fast from the edge of the sky. Keep moving and dodge their dive!",
+            Threat::Crows => "Crows flap overhead and dive beak-first! Step aside when one hovers, or bop it from above, even in flight!",
+            Threat::Eagles => "Eagles sweep in fast from the edge of the sky. Dodge their dive, or pounce on an eagle's back to bop it!",
         }
     }
 
@@ -661,7 +661,7 @@ enum TipIcon {
 fn basics_card(assets: &Assets, top: f32, alpha: f32, touch: bool) {
     let controls = if touch {
         [
-            "Slide a thumb on the left side to walk, and further to run.",
+            "Slide the bar at the bottom left to walk, and further to run.",
             "Hold the right side to crouch, let go to pounce. Hold longer to leap higher!",
             "Fall past a branch to grab it. Tap the right side to climb up; swipe down there to let go or drop through.",
         ]
@@ -745,7 +745,7 @@ impl IconRows {
 fn crouched_on_ring(assets: &Assets, at: Vec2, ring: Color, alpha: f32) {
     // As in play, the ring sits under her haunches, a little behind her middle
     charge_ring(at + vec2(-6.0, 12.0), 1.0, ring, alpha);
-    fit_sprite_centred(&assets.kitty, "crouch_2", at - vec2(0.0, 4.0), 70.0, 1.0, fade(WHITE, alpha));
+    fit_sprite_centred(&assets.kitty, "swish_a_2", at - vec2(0.0, 4.0), 70.0, 1.0, fade(WHITE, alpha));
 }
 
 /// A small copy of the charge ring at Kitty's feet, `filled` (0..1) of the way round from the
@@ -966,7 +966,7 @@ pub fn draw_paused(assets: &Assets, time: f32, touch: bool) {
     let bounce = "Hold as you land, let go as the ring glows blue: bounce higher! Too high and branches snap.";
     let rows = if touch {
         [
-            (Legend::Slide, "Slide a thumb on the left side to walk; further to run."),
+            (Legend::Slide, "Slide the bar at the bottom left to walk; further to run."),
             (Legend::Hold, "Hold the right side to crouch, let go to leap. Hanging? Tap to climb."),
             (Legend::Swipe, "Swipe down on the right side to let go of a branch or drop through it."),
             (Legend::Bounce, bounce),

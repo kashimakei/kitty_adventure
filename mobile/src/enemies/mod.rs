@@ -1,6 +1,7 @@
 //! Enemies share one interface so the world can step, draw and collide them alike. Only their
 //! damaging pixels (paws, jaws, beaks, talons; see sprites.rs) hurt Kitty, and only on her body.
-//! Small ones (squirrels, snakes, crows) can be stomped from above.
+//! All but the dogs can be stomped from above: squirrels and snakes on their branches, crows and
+//! eagles in the air too.
 
 pub mod crow;
 pub mod dog;
@@ -78,11 +79,15 @@ pub trait Enemy {
     /// Do this enemy's damaging pixels touch `body`?
     fn strikes(&self, assets: &Assets, body: Rect) -> bool;
     /// The area Kitty's feet must land on to stomp it, if it can be stomped right now.
-    fn stomp_box(&self, _assets: &Assets) -> Option<Rect> {
+    fn stomp_box(&self) -> Option<Rect> {
         None
     }
     /// Kitty landed on it from above.
     fn stomped(&mut self) {}
+    /// What stomping it scores.
+    fn stomp_points(&self) -> u32 {
+        crate::consts::SCORE_STOMP
+    }
     /// Draw over Kitty rather than behind her (while striking at her).
     fn in_front(&self) -> bool {
         false
@@ -135,6 +140,8 @@ pub struct Spawner {
     dog_timer: f32,
     crow_timer: f32,
     eagle_timer: f32,
+    /// Eagles still to come this level.
+    eagles_left: usize,
 }
 
 impl Spawner {
@@ -143,6 +150,7 @@ impl Spawner {
             dog_timer: d.dog_interval * rng.range(0.5, 1.5),
             crow_timer: rng.pair(d.crow_interval),
             eagle_timer: rng.pair(d.eagle_interval),
+            eagles_left: d.eagles_per_level,
         }
     }
 
@@ -176,14 +184,15 @@ impl Spawner {
                 }
             }
         }
-        if d.eagles {
+        // The wait for the next eagle only runs while there's room in the sky, so one that's just
+        // gone is never followed straight away by the next
+        if d.eagles && self.eagles_left > 0 && count_of(enemies, Kind::Eagle) < d.max_eagles {
             self.eagle_timer -= dt;
             if self.eagle_timer <= 0.0 {
                 self.eagle_timer = rng.pair(d.eagle_interval);
-                if count_of(enemies, Kind::Eagle) < d.max_eagles {
-                    let y = rng.range(view.top() + 100.0, view.top() + view.h / 2.0);
-                    enemies.push(Box::new(eagle::Eagle::new(rng.chance(0.5), y, view, kitty, d.eagle_speed)));
-                }
+                self.eagles_left -= 1;
+                let y = rng.range(view.top() + 100.0, view.top() + view.h / 2.0);
+                enemies.push(Box::new(eagle::Eagle::new(rng.chance(0.5), y, view, kitty, d.eagle_speed)));
             }
         }
     }
