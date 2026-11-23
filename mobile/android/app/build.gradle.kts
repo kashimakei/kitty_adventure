@@ -43,8 +43,8 @@ android {
         applicationId = "com.kashimakei.kittyadventure"
         minSdk = minApi
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.4.0"
+        versionCode = 9
+        versionName = "0.4.1"
     }
 
     signingConfigs {
