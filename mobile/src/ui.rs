@@ -20,10 +20,21 @@ pub const BUTTON_H: f32 = 100.0;
 const RADIUS: f32 = 26.0;
 const LABEL_SIZE: f32 = 40.0;
 
-/// Draw a button and say whether it was pressed: tapped (the finger went down and came up on
-/// it), or Enter pressed while it has the keyboard's focus. It sinks while a finger is on it and
-/// brightens under the mouse.
+/// Draw a button and say whether it was pressed (see `pressed`).
 pub fn button(input: &MenuInput, r: Rect, label: &str, style: Style, focused: bool, alpha: f32) -> bool {
+    draw_button(input, r, label, style, focused, alpha);
+    pressed(input, r, focused)
+}
+
+/// Whether a button at `r` was pressed: tapped (the finger went down and came up on it), or
+/// Enter pressed while it has the keyboard's focus.
+pub fn pressed(input: &MenuInput, r: Rect, focused: bool) -> bool {
+    input.tapped(r) || (focused && input.nav == Some(Nav::Activate))
+}
+
+/// Draw a button: it sinks while a finger is on it, brightens under the mouse, and is outlined
+/// when it has the keyboard's focus.
+pub fn draw_button(input: &MenuInput, r: Rect, label: &str, style: Style, focused: bool, alpha: f32) {
     let held = input.held.is_some_and(|p| r.contains(p));
     let hover = input.hover.is_some_and(|p| r.contains(p));
     let at = if held { Rect::new(r.x, r.y + 4.0, r.w, r.h) } else { r };
@@ -41,7 +52,24 @@ pub fn button(input: &MenuInput, r: Rect, label: &str, style: Style, focused: bo
     }
     let size = paint::fit_size(label, LABEL_SIZE, r.w - 30.0);
     paint::text(label, at.center().x, at.center().y + size * 0.35, size, paint::fade(paint::INK, alpha), Align::Center);
-    input.tapped(r) || (focused && input.nav == Some(Nav::Activate))
+}
+
+/// A five-pointed star at `centre`, `radius` to its points, filled and outlined.
+pub fn star(centre: Vec2, radius: f32, fill: Color, outline: Color) {
+    let point = |i: usize, r: f32| {
+        let angle = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.0;
+        centre + Vec2::from_angle(angle) * r
+    };
+    let rim: Vec<Vec2> = (0..10).map(|i| point(i, if i % 2 == 0 { radius } else { radius * 0.45 })).collect();
+    if outline.a > 0.0 {
+        let grown: Vec<Vec2> = rim.iter().map(|&p| centre + (p - centre) * (1.0 + 3.0 / radius)).collect();
+        for i in 0..10 {
+            draw_triangle(centre, grown[i], grown[(i + 1) % 10], outline);
+        }
+    }
+    for i in 0..10 {
+        draw_triangle(centre, rim[i], rim[(i + 1) % 10], fill);
+    }
 }
 
 /// The keyboard's focus over `n` buttons after `nav`: back with Left or Up, on with Right or

@@ -136,7 +136,7 @@ impl Threat {
     }
 
     /// A frame that shows it off, for the level intro's tip card.
-    fn icon(self, assets: &Assets) -> (&Sprites, &'static str) {
+    pub(crate) fn icon(self, assets: &Assets) -> (&Sprites, &'static str) {
         match self {
             Threat::Squirrels => (&assets.squirrel, "idle_0"),
             Threat::Dogs => (&assets.dog, "sniff_0"),
@@ -381,7 +381,7 @@ pub fn draw_page(assets: &Assets, page: &Page, time: f32) {
 }
 
 /// The picture-book frame each story page draws its art in.
-fn picture_frame(r: Rect, mood: Mood, alpha: f32) {
+pub(crate) fn picture_frame(r: Rect, mood: Mood, alpha: f32) {
     drop_shadow(r, 30.0, alpha);
     let (top, bottom) = match mood {
         Mood::Night => (rgb(0.10, 0.12, 0.30), rgb(0.18, 0.24, 0.40)),
@@ -750,7 +750,7 @@ fn crouched_on_ring(assets: &Assets, at: Vec2, ring: Color, alpha: f32) {
 
 /// A small copy of the charge ring at Kitty's feet, `filled` (0..1) of the way round from the
 /// front either way, as it fills in play.
-fn charge_ring(centre: Vec2, filled: f32, color: Color, alpha: f32) {
+pub(crate) fn charge_ring(centre: Vec2, filled: f32, color: Color, alpha: f32) {
     const PIECES: usize = 32;
     let (rx, ry) = (26.0, 7.0);
     let point = |angle: f32| centre + vec2(rx * angle.cos(), ry * angle.sin());
@@ -1055,7 +1055,7 @@ fn arrow(at: Vec2, dir: Vec2, color: Color) {
 // Scenery shared by the screens
 
 #[derive(Clone, Copy, PartialEq)]
-enum Mood {
+pub(crate) enum Mood {
     Dusk,
     Night,
     Day,
@@ -1064,7 +1064,7 @@ enum Mood {
 
 /// The painted forest, tinted for the mood and darkened top and bottom so cards and text stand
 /// out, with leaves drifting down and fireflies or stars after dark.
-fn backdrop(assets: &Assets, mood: Mood) {
+pub(crate) fn backdrop(assets: &Assets, mood: Mood) {
     let t = ambient_time();
     let tex = &assets.background;
     let scale = (VIEW_W / tex.width()).max(VIEW_H / tex.height());
@@ -1103,7 +1103,7 @@ fn backdrop(assets: &Assets, mood: Mood) {
 }
 
 /// Leaves drifting down through `area`, blown sideways by `wind`.
-fn leaves_in(assets: &Assets, area: Rect, t: f32, count: usize, wind: f32, alpha: f32) {
+pub(crate) fn leaves_in(assets: &Assets, area: Rect, t: f32, count: usize, wind: f32, alpha: f32) {
     const FALLING: [&str; 6] = ["falling_0", "falling_1", "falling_2", "falling_3", "falling_4", "falling_5"];
     let span = vec2(area.w + 80.0, area.h + 80.0);
     for i in 0..count {
@@ -1123,7 +1123,7 @@ fn fireflies(t: f32, count: usize) {
     fireflies_in(Rect::new(0.0, VIEW_H * 0.35, VIEW_W, VIEW_H * 0.5), t, count, 1.0);
 }
 
-fn fireflies_in(area: Rect, t: f32, count: usize, alpha: f32) {
+pub(crate) fn fireflies_in(area: Rect, t: f32, count: usize, alpha: f32) {
     for i in 0..count {
         let base = area.point() + vec2(hash(i + 1000) * area.w, hash(i + 1100) * area.h);
         let at = base + vec2((t * 0.4 + hash(i + 1200) * TAU).sin() * 40.0, (t * 0.3 + hash(i + 1300) * TAU).cos() * 30.0);
@@ -1133,7 +1133,7 @@ fn fireflies_in(area: Rect, t: f32, count: usize, alpha: f32) {
     }
 }
 
-fn confetti(area: Rect, t: f32, count: usize, alpha: f32) {
+pub(crate) fn confetti(area: Rect, t: f32, count: usize, alpha: f32) {
     const COLORS: [Color; 5] = [
         Color::new(1.0, 0.82, 0.32, 1.0),
         Color::new(1.0, 0.55, 0.45, 1.0),
@@ -1190,7 +1190,7 @@ fn draw_branch(x0: f32, x1: f32, y_at: impl Fn(f32) -> f32, lift: f32, thickness
 }
 
 /// A tree trunk centred on `x`, shaded round, with a few furrows in the bark.
-fn draw_trunk(x: f32, top: f32, bottom: f32, width: f32, alpha: f32) {
+pub(crate) fn draw_trunk(x: f32, top: f32, bottom: f32, width: f32, alpha: f32) {
     let left = x - width / 2.0;
     let h = bottom - top;
     draw_rectangle(left, top, width, h, fade(TRUNK_COLOR, alpha));
@@ -1206,7 +1206,7 @@ fn draw_trunk(x: f32, top: f32, bottom: f32, width: f32, alpha: f32) {
 
 /// A friend sitting in a nest whose bottom centre is `at`: the nest, the friend, then the
 /// nest's front rim again over the friend's feet.
-fn friend_in_nest(assets: &Assets, frame: &str, at: Vec2, scale: f32, hop: f32, facing: f32, alpha: f32) {
+pub(crate) fn friend_in_nest(assets: &Assets, frame: &str, at: Vec2, scale: f32, hop: f32, facing: f32, alpha: f32) {
     if scale <= 0.01 {
         return;
     }
@@ -1226,7 +1226,7 @@ fn friend_in_nest(assets: &Assets, frame: &str, at: Vec2, scale: f32, hop: f32, 
 
 /// A cream speech bubble with the speaker's name tag, its tail pointing up at `tail_to`.
 /// Returns the bubble's rectangle.
-fn speech_bubble(line: &str, speaker: &str, top: f32, tail_to: Vec2, size: f32, alpha: f32) -> Rect {
+pub(crate) fn speech_bubble(line: &str, speaker: &str, top: f32, tail_to: Vec2, size: f32, alpha: f32) -> Rect {
     let width = 520.0;
     let lines = wrap(&format!("\"{line}\""), size, width - 50.0);
     let line_h = size * 1.35;
@@ -1286,7 +1286,7 @@ fn page_dots(current: usize, count: usize, y: f32, t: f32) {
 }
 
 /// A gently pulsing "Tap to..." pill.
-fn tap_prompt(label: &str, y: f32, t: f32) {
+pub(crate) fn tap_prompt(label: &str, y: f32, t: f32) {
     let pulse = (t * 3.0).sin() * 0.5 + 0.5;
     let w = measure(label, 30.0) + 70.0;
     let r = Rect::new(300.0 - w / 2.0, y - 34.0, w, 60.0);
@@ -1298,13 +1298,13 @@ fn tap_prompt(label: &str, y: f32, t: f32) {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum Ribbon {
+pub(crate) enum Ribbon {
     Leaf,
     Gold,
 }
 
 /// A ribbon banner with a line of text on it.
-fn ribbon(label: &str, centre: Vec2, size: f32, alpha: f32, style: Ribbon) {
+pub(crate) fn ribbon(label: &str, centre: Vec2, size: f32, alpha: f32, style: Ribbon) {
     if alpha <= 0.0 {
         return;
     }
@@ -1337,7 +1337,7 @@ fn ribbon(label: &str, centre: Vec2, size: f32, alpha: f32, style: Ribbon) {
 }
 
 /// A paw print: a big pad and four toes.
-fn paw(at: Vec2, scale: f32, color: Color) {
+pub(crate) fn paw(at: Vec2, scale: f32, color: Color) {
     draw_ellipse(at.x, at.y + 6.0 * scale, 16.0 * scale, 13.0 * scale, 0.0, color);
     for (dx, dy) in [(-17.0, -10.0), (-6.0, -20.0), (6.0, -20.0), (17.0, -10.0)] {
         draw_circle(at.x + dx * scale, at.y + dy * scale, 6.5 * scale, color);
@@ -1349,14 +1349,14 @@ fn shadow_ellipse(at: Vec2, w: f32, h: f32, alpha: f32) {
 }
 
 /// Draw a frame scaled to fit a `size` box, anchored at `at` (usually its feet).
-fn fit_sprite(sprites: &Sprites, name: &str, at: Vec2, size: f32, facing: f32, tint: Color) {
+pub(crate) fn fit_sprite(sprites: &Sprites, name: &str, at: Vec2, size: f32, facing: f32, tint: Color) {
     let frame = sprites.get(name).size();
     let scale = size / frame.x.max(frame.y);
     sprites.draw_ex(name, at, facing, scale, 0.0, tint);
 }
 
 /// Draw a frame scaled to fit a `size` box centred on `centre`, wherever its anchor is.
-fn fit_sprite_centred(sprites: &Sprites, name: &str, centre: Vec2, size: f32, facing: f32, tint: Color) {
+pub(crate) fn fit_sprite_centred(sprites: &Sprites, name: &str, centre: Vec2, size: f32, facing: f32, tint: Color) {
     let frame = sprites.get(name);
     let scale = size / frame.size().x.max(frame.size().y);
     let at = centre - frame.size() * scale / 2.0 + frame.anchor_for(facing) * scale;

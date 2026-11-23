@@ -133,6 +133,11 @@ impl Scenery {
         Self { far, mid, near, cloud_sprites, clouds }
     }
 
+    /// One of the cloud sprites, wrapping round (none if the clouds didn't load).
+    pub fn cloud(&self, i: usize) -> Option<&Texture2D> {
+        (!self.cloud_sprites.is_empty()).then(|| &self.cloud_sprites[i % self.cloud_sprites.len()])
+    }
+
     /// Draw it all with the screen camera set, in the colours of `look`. `camera_x` is the world
     /// camera's left edge, `climbed` how far it has risen above the ground, and `height` that as a
     /// fraction of the level's height (the sky deepens toward the top).
