@@ -9,12 +9,7 @@
 use macroquad::prelude::*;
 
 use crate::consts::*;
-
-/// Sky at the top of the screen and at the horizon, low down and high up the trees.
-const SKY_TOP: Color = Color::new(0.45, 0.72, 0.95, 1.0);
-const SKY_HORIZON: Color = Color::new(0.80, 0.92, 0.98, 1.0);
-const SKY_TOP_HIGH: Color = Color::new(0.26, 0.47, 0.82, 1.0);
-const SKY_HORIZON_HIGH: Color = Color::new(0.62, 0.80, 0.96, 1.0);
+use crate::look::{tinted, Look};
 
 /// Where a layer sits and how it moves.
 struct Placement {
@@ -64,7 +59,7 @@ impl Layer {
         Self { texture, fill: Color::new(r / n, g / n, b / n, 1.0) }
     }
 
-    fn draw(&self, placement: &Placement, camera_x: f32, climbed: f32) {
+    fn draw(&self, placement: &Placement, camera_x: f32, climbed: f32, tint: Color) {
         let w = placement.width;
         let h = w * self.texture.height() / self.texture.width();
         // Centre its spare width over the camera's travel so both world edges stay covered
@@ -74,9 +69,9 @@ impl Layer {
         if y >= VIEW_H {
             return;
         }
-        draw_texture_ex(&self.texture, x, y, WHITE, DrawTextureParams { dest_size: Some(vec2(w, h)), ..Default::default() });
+        draw_texture_ex(&self.texture, x, y, tint, DrawTextureParams { dest_size: Some(vec2(w, h)), ..Default::default() });
         if y + h < VIEW_H {
-            draw_rectangle(0.0, y + h - 1.0, VIEW_W, VIEW_H - (y + h) + 1.0, self.fill);
+            draw_rectangle(0.0, y + h - 1.0, VIEW_W, VIEW_H - (y + h) + 1.0, tinted(self.fill, tint));
         }
     }
 }
@@ -138,13 +133,17 @@ impl Scenery {
         Self { far, mid, near, cloud_sprites, clouds }
     }
 
-    /// Draw it all with the screen camera set. `camera_x` is the world camera's left edge,
-    /// `climbed` how far it has risen above the ground, and `height` that as a fraction of the
-    /// level's height (the sky deepens toward the top).
-    pub fn draw(&self, camera_x: f32, climbed: f32, height: f32, time: f32) {
+    /// Draw it all with the screen camera set, in the colours of `look`. `camera_x` is the world
+    /// camera's left edge, `climbed` how far it has risen above the ground, and `height` that as a
+    /// fraction of the level's height (the sky deepens toward the top).
+    pub fn draw(&self, camera_x: f32, climbed: f32, height: f32, time: f32, look: &Look) {
         let mix = |a: Color, b: Color| Color::new(a.r + (b.r - a.r) * height, a.g + (b.g - a.g) * height,
                                                   a.b + (b.b - a.b) * height, 1.0);
-        gradient(Rect::new(0.0, 0.0, VIEW_W, VIEW_H), mix(SKY_TOP, SKY_TOP_HIGH), mix(SKY_HORIZON, SKY_HORIZON_HIGH));
+        let [top, horizon, top_high, horizon_high] = look.sky;
+        gradient(Rect::new(0.0, 0.0, VIEW_W, VIEW_H), mix(top, top_high), mix(horizon, horizon_high));
+        // Clouds take half the tint: they're in the sky, not the hazy distance
+        let tint = look.scenery_tint;
+        let cloud_tint = Color::new((1.0 + tint.r) / 2.0, (1.0 + tint.g) / 2.0, (1.0 + tint.b) / 2.0, 1.0);
 
         let span = VIEW_W + CLOUD_WRAP_MARGIN;
         for cloud in &self.clouds {
@@ -155,12 +154,12 @@ impl Scenery {
                 continue;
             }
             let x = (cloud.x + cloud.drift * time - camera_x * cloud.follow_x).rem_euclid(span) - CLOUD_WRAP_MARGIN / 2.0 - size.x / 2.0;
-            draw_texture_ex(texture, x, y, WHITE, DrawTextureParams { dest_size: Some(size), ..Default::default() });
+            draw_texture_ex(texture, x, y, cloud_tint, DrawTextureParams { dest_size: Some(size), ..Default::default() });
         }
 
-        self.far.draw(&FAR, camera_x, climbed);
-        self.mid.draw(&MID, camera_x, climbed);
-        self.near.draw(&NEAR, camera_x, climbed);
+        self.far.draw(&FAR, camera_x, climbed, tint);
+        self.mid.draw(&MID, camera_x, climbed, tint);
+        self.near.draw(&NEAR, camera_x, climbed, tint);
     }
 }
 

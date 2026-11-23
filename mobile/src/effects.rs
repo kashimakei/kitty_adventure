@@ -80,7 +80,8 @@ impl Effects {
         });
     }
 
-    pub fn draw(&self, assets: &Assets) {
+    /// Falling leaves take `leaf_tint`, as the leaves on the limbs do.
+    pub fn draw(&self, assets: &Assets, leaf_tint: Color) {
         for effect in &self.list {
             match effect {
                 Effect::Sparkle { pos, age } => {
@@ -97,7 +98,8 @@ impl Effects {
                 }
                 Effect::Leaf { pos, rotation, sprite, age, .. } => {
                     let alpha = (12.0 - age).clamp(0.0, 1.0);
-                    assets.foliage.draw_ex(sprite, *pos, 1.0, 1.0, *rotation, Color::new(1.0, 1.0, 1.0, alpha));
+                    let color = Color::new(leaf_tint.r, leaf_tint.g, leaf_tint.b, alpha);
+                    assets.foliage.draw_ex(sprite, *pos, 1.0, 1.0, *rotation, color);
                 }
             }
         }

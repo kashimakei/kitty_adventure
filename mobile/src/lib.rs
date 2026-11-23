@@ -19,6 +19,7 @@ pub mod items;
 pub mod kitty;
 pub mod level;
 pub mod limb;
+pub mod look;
 pub mod parallax;
 pub mod platform;
 pub mod rng;

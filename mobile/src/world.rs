@@ -13,6 +13,7 @@ use crate::items::{Item, ItemKind};
 use crate::kitty::{Kitty, Push, Support};
 use crate::level::{self, Difficulty, LevelPlan, LevelSpec};
 use crate::limb::{self, Attachment, Limb, LimbId, LimbSpec};
+use crate::look::{self, Look};
 use crate::rng::Rng;
 use crate::sprites::Assets;
 use crate::story::{self, Friend};
@@ -27,6 +28,8 @@ pub enum Outcome {
 }
 
 pub struct World {
+    /// Its region's colours.
+    pub look: Look,
     pub level: usize,
     pub lap: usize,
     pub difficulty: Difficulty,
@@ -69,12 +72,13 @@ impl World {
         let spec = level::endless(level, lap);
         let (plan, mut limbs, mut rng) = build_level(&spec, seed);
         let difficulty = spec.difficulty;
+        let look = *look::endless(level);
         for limb in &mut limbs {
-            limb.decorate(&mut rng, difficulty.autumn);
+            limb.decorate(&mut rng, look.autumn);
         }
         let goal = limbs.iter().position(|l| l.is_goal).unwrap_or(0);
 
-        let trees = plan.tree_xs.iter().map(|&x| Tree::new(x, plan.top_y, &mut rng)).collect();
+        let trees = plan.tree_xs.iter().map(|&x| Tree::new(x, plan.top_y, look.autumn, &mut rng)).collect();
         let items = plan.items.iter().map(|i| Item::new(i.kind, i.limb, i.frac, rng.range(0.0, TAU))).collect();
         let mut enemies: Vec<Box<dyn Enemy>> = Vec::new();
         for &(limb, frac) in &plan.squirrel_spots {
@@ -88,8 +92,9 @@ impl World {
         let kitty = Kitty::new(start_x);
         let mut camera = Camera::new(start_x);
         camera.snap_to(kitty.rect());
-        let bark = tree::make_bark_texture(&mut rng);
+        let bark = tree::make_bark_texture(&mut rng, &look.wood);
         Self {
+            look,
             level,
             lap,
             friend: Friend::for_level(level),
@@ -351,28 +356,30 @@ impl World {
         set_camera(&view.screen_camera());
         let climbed = camera.height();
         let height = (climbed / (-self.top_y).max(1.0)).clamp(0.0, 1.0);
-        assets.scenery.draw(camera.x, climbed, height, self.time);
+        assets.scenery.draw(camera.x, climbed, height, self.time, &self.look);
         set_camera(&camera.world_camera(view));
 
         let view_rect = camera.view_rect();
         let visible = |r: Rect| r.overlaps(&Rect::new(view_rect.x - 120.0, view_rect.y - 120.0, view_rect.w + 240.0, view_rect.h + 240.0));
         // Leaves behind the wood, the wood (each limb merged with its forks), then trunks over
         // the limbs' roots (with the wood brought back out over their edges), then leaves in front
+        let look = &self.look;
         for limb in self.limbs.iter().filter(|l| visible(l.bounds())) {
-            limb.draw_back(assets, self.time, self.breeze);
+            limb.draw_back(assets, self.time, self.breeze, look.foliage_tint);
         }
-        limb::draw_wood(&self.limbs, |l| visible(l.bounds()), &self.grain);
+        limb::draw_wood(&self.limbs, |l| visible(l.bounds()), &self.grain, &look.wood);
         for tree in &self.trees {
-            tree.draw(assets, &self.bark, view_rect);
+            tree.draw(assets, &self.bark, view_rect, look.foliage_tint);
         }
-        limb::draw_roots(&self.limbs, |l| visible(l.bounds()), &self.grain);
+        limb::draw_roots(&self.limbs, |l| visible(l.bounds()), &self.grain, &look.wood);
         for limb in self.limbs.iter().filter(|l| visible(l.bounds())) {
-            limb.draw_front(assets, self.time, self.breeze);
+            limb.draw_front(assets, self.time, self.breeze, look.foliage_tint);
         }
         // Ground
-        draw_rectangle(-50.0, GROUND_Y, WORLD_W + 100.0, GROUND_DEPTH, SOIL);
-        draw_rectangle(-50.0, GROUND_Y, WORLD_W + 100.0, 18.0, GRASS);
-        draw_rectangle(-50.0, GROUND_Y + 14.0, WORLD_W + 100.0, 6.0, GRASS_DARK);
+        let [grass, grass_dark, soil] = look.ground;
+        draw_rectangle(-50.0, GROUND_Y, WORLD_W + 100.0, GROUND_DEPTH, soil);
+        draw_rectangle(-50.0, GROUND_Y, WORLD_W + 100.0, 18.0, grass);
+        draw_rectangle(-50.0, GROUND_Y + 14.0, WORLD_W + 100.0, 6.0, grass_dark);
 
         // The friend waiting in the nest
         let nest = self.nest_position();
@@ -403,7 +410,7 @@ impl World {
         for enemy in self.enemies.iter().filter(|e| e.in_front()) {
             enemy.draw(assets);
         }
-        self.effects.draw(assets);
+        self.effects.draw(assets, look.foliage_tint);
 
         if self.rescued {
             set_camera(&view.screen_camera());

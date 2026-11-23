@@ -14,7 +14,6 @@ pub struct Difficulty {
     pub gap_extra: f32,
     pub stiffness: f32,
     pub wind: f32,
-    pub autumn: f32, // share of autumn leaves: the woods turn as Kitty climbs higher
     pub squirrels: usize,
     pub snakes: usize,
     pub dogs: bool,
@@ -61,7 +60,6 @@ pub fn difficulty(level: usize, lap: usize) -> Difficulty {
         gap_extra: 2.0 * old_level * 10.0,
         stiffness: (0.95 - 0.035 * climb).max(0.5),
         wind: 3.0 + 0.6 * climb,
-        autumn: (0.25 + 0.15 * (level - 1) as f32).min(0.9),
         squirrels: 1 + level + lap,
         snakes: if level >= 3 { level - 1 + lap } else { 0 },
         dogs: level >= 2 || lap > 0,

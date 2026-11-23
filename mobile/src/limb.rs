@@ -7,6 +7,7 @@ use branch_engine::math::Vec2 as EngineVec2;
 use macroquad::prelude::*;
 
 use crate::consts::*;
+use crate::look::WoodColors;
 use crate::rng::Rng;
 use crate::sprites::Assets;
 
@@ -515,7 +516,7 @@ impl Limb {
         d.y.atan2(d.x * self.direction)
     }
 
-    fn draw_decorations(&self, assets: &Assets, front: bool, time: f32, breeze: f32) {
+    fn draw_decorations(&self, assets: &Assets, front: bool, time: f32, breeze: f32, tint: Color) {
         for d in self.decorations.iter().filter(|d| d.front == front) {
             // Offsets and rotations are in the limb's own frame (x toward the tip); mirror them
             // for limbs growing left, which also draw their sprites flipped
@@ -524,16 +525,17 @@ impl Limb {
             let local = Vec2::from_angle(angle).rotate(d.offset);
             let offset = vec2(local.x * self.direction, local.y);
             let rotation = (angle + d.rotation + sway) * self.direction;
-            assets.foliage.draw_ex(d.sprite, self.top_point(d.node) + offset, self.direction, d.scale, rotation, WHITE);
+            assets.foliage.draw_ex(d.sprite, self.top_point(d.node) + offset, self.direction, d.scale, rotation, tint);
         }
     }
 
-    pub fn draw_back(&self, assets: &Assets, time: f32, breeze: f32) {
-        self.draw_decorations(assets, false, time, breeze);
+    /// The leaves and twigs behind the wood, tinted by `tint`.
+    pub fn draw_back(&self, assets: &Assets, time: f32, breeze: f32, tint: Color) {
+        self.draw_decorations(assets, false, time, breeze, tint);
     }
 
-    pub fn draw_front(&self, assets: &Assets, time: f32, breeze: f32) {
-        self.draw_decorations(assets, true, time, breeze);
+    pub fn draw_front(&self, assets: &Assets, time: f32, breeze: f32, tint: Color) {
+        self.draw_decorations(assets, true, time, breeze, tint);
     }
 
     /// Smoothed outline of columns `from..=to`: Catmull-Rom curves through the top nodes and
@@ -599,7 +601,7 @@ impl Limb {
     }
 
     /// Jagged splits where the limb will snap, growing as it nears breaking.
-    fn draw_cracks(&self) {
+    fn draw_cracks(&self, color: Color) {
         let seg = ((self.branch.snap_distance / self.branch.segment_len) as usize).max(1);
         let top = self.top_point(seg + 1);
         let depth = self.bottom_point(seg + 1).y - top.y;
@@ -608,7 +610,7 @@ impl Limb {
             let mut p = vec2(top.x, top.y + depth * side);
             for k in 0..3 {
                 let q = p + vec2(self.direction * 4.0, if k % 2 == 0 { 5.0 } else { -3.0 } * reach);
-                draw_line(p.x, p.y, q.x, q.y, 2.0, BARK_DARK);
+                draw_line(p.x, p.y, q.x, q.y, 2.0, color);
                 p = q;
             }
         }
@@ -862,12 +864,12 @@ struct Palette {
 }
 
 impl Palette {
-    fn for_limb(limb: &Limb) -> Self {
+    fn for_limb(limb: &Limb, wood: &WoodColors) -> Self {
         // Thin limbs that can snap are young wood: paler, with a hint of green
         let (light, fill, shade) = if limb.thin {
-            (BARK_YOUNG_LIGHT, BARK_YOUNG, BARK_YOUNG_SHADE)
+            (wood.young_light, wood.young, wood.young_shade)
         } else {
-            (BARK_LIGHT, BARK, BARK_SHADE)
+            (wood.light, wood.fill, wood.shade)
         };
         Self { rows: [light, mix(light, fill, 0.5), fill, mix(fill, shade, 0.3), shade] }
     }
@@ -949,7 +951,7 @@ impl WoodMesh {
 /// After the trunks: bring each limb's wood back out over the trunk's dark edge where it leaves
 /// the bark, fading into the trunk, so the limb grows out of the trunk instead of having the
 /// trunk's edge drawn across it.
-pub fn draw_roots(limbs: &[Limb], visible: impl Fn(&Limb) -> bool, grain: &Texture2D) {
+pub fn draw_roots(limbs: &[Limb], visible: impl Fn(&Limb) -> bool, grain: &Texture2D, wood: &WoodColors) {
     let mut mesh = WoodMesh::new(grain);
     for limb in limbs.iter().filter(|l| l.attachment.is_none() && l.trunk_half > 0.0 && !l.gone() && visible(l)) {
         // The root's first few columns are all the curve needs there
@@ -966,14 +968,14 @@ pub fn draw_roots(limbs: &[Limb], visible: impl Fn(&Limb) -> bool, grain: &Textu
         let first = (0..n).rev().find(|&k| reach(k).1 <= -ROOT_BLEND).unwrap_or(0);
         let last = (first..n).find(|&k| reach(k).0 >= 0.0).unwrap_or(n - 1);
         let fade = |_: usize, p: Vec2| ((out(p) + ROOT_BLEND) / (ROOT_BLEND - 1.0)).clamp(0.0, 1.0);
-        shade_piece(&mut mesh, &piece, &Palette::for_limb(limb), limb.grain_offset(), first..last + 1, Some(&fade));
+        shade_piece(&mut mesh, &piece, &Palette::for_limb(limb, wood), limb.grain_offset(), first..last + 1, Some(&fade));
     }
     mesh.flush();
 }
 
-/// Draw the wood of every visible limb. Each limb is drawn together with its forks, so they
-/// merge where they join; separate limbs keep their own outlines where they cross.
-pub fn draw_wood(limbs: &[Limb], visible: impl Fn(&Limb) -> bool, grain: &Texture2D) {
+/// Draw the wood of every visible limb in `wood`'s colours. Each limb is drawn together with its
+/// forks, so they merge where they join; separate limbs keep their own outlines where they cross.
+pub fn draw_wood(limbs: &[Limb], visible: impl Fn(&Limb) -> bool, grain: &Texture2D, wood: &WoodColors) {
     let mut root = Vec::with_capacity(limbs.len());
     for (i, limb) in limbs.iter().enumerate() {
         let r = match limb.attachment {
@@ -991,13 +993,13 @@ pub fn draw_wood(limbs: &[Limb], visible: impl Fn(&Limb) -> bool, grain: &Textur
         family.clear();
         family.extend((r..limbs.len()).filter(|&i| root[i] == r));
         if family.iter().any(|&i| visible(&limbs[i])) {
-            draw_family(limbs, &family, &mut mesh);
+            draw_family(limbs, &family, &mut mesh, wood);
         }
     }
     mesh.flush();
 }
 
-fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh) {
+fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh, wood: &WoodColors) {
     let mut pieces: Vec<(LimbId, Piece)> = Vec::new();
     for &id in family {
         limbs[id].add_pieces(id, &mut pieces);
@@ -1020,9 +1022,9 @@ fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh) {
     for (_, piece) in &mut pieces {
         piece.finish();
     }
-    let palettes: Vec<Palette> = pieces.iter().map(|(id, _)| Palette::for_limb(&limbs[*id])).collect();
+    let palettes: Vec<Palette> = pieces.iter().map(|(id, _)| Palette::for_limb(&limbs[*id], wood)).collect();
     let joins: Vec<Join> = forks.iter().map(|&(fork, parent, way)| {
-        join(&pieces[fork].1, &pieces[parent].1, (fork, parent), way, limbs[pieces[fork].0].thickness, &palettes)
+        join(&pieces[fork].1, &pieces[parent].1, (fork, parent), way, limbs[pieces[fork].0].thickness, &palettes, wood.outline)
     }).collect();
     let caps: Vec<[Option<Cap>; 2]> = pieces.iter().enumerate().map(|(i, (id, piece))| {
         let limb = &limbs[*id];
@@ -1033,17 +1035,17 @@ fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh) {
 
     // Every outline first: the wood grown outward, in dark bark
     for (i, (_, piece)) in pieces.iter().enumerate() {
-        outline_piece(mesh, piece, &caps[i]);
+        outline_piece(mesh, piece, &caps[i], wood.outline);
     }
     for fillet in joins.iter().flat_map(|j| &j.fillets) {
-        let rim = fillet.curve.iter().map(|&(p, n)| (p + n * OUTLINE, PLAIN, BARK_DARK));
-        mesh.fan((fillet.corner, PLAIN, BARK_DARK), rim);
+        let rim = fillet.curve.iter().map(|&(p, n)| (p + n * OUTLINE, PLAIN, wood.outline));
+        mesh.fan((fillet.corner, PLAIN, wood.outline), rim);
     }
     // Forks' wood, which the parent then covers where it lies inside it
     for join in &joins {
         let (id, piece) = &pieces[join.fork];
         shade_piece(mesh, piece, &palettes[join.fork], limbs[*id].grain_offset(), 0..piece.top.len(), None);
-        shade_caps(mesh, &caps[join.fork], &palettes[join.fork], limbs[*id].grain_offset());
+        shade_caps(mesh, &caps[join.fork], &palettes[join.fork], limbs[*id].grain_offset(), wood.splinter);
     }
     // Every piece's wood in order (parents before their forks). A fork is drawn again over its
     // parent, its root fading out below the parent's top edge so the two blend
@@ -1057,7 +1059,7 @@ fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh) {
             }
             None => shade_piece(mesh, piece, &palettes[i], u0, 0..piece.top.len(), None),
         }
-        shade_caps(mesh, &caps[i], &palettes[i], u0);
+        shade_caps(mesh, &caps[i], &palettes[i], u0, wood.splinter);
     }
     for fillet in joins.iter().flat_map(|j| &j.fillets) {
         let rim = fillet.curve.iter().enumerate().map(|(j, &(p, _))| {
@@ -1070,7 +1072,7 @@ fn draw_family(limbs: &[Limb], family: &[LimbId], mesh: &mut WoodMesh) {
     if !strained.is_empty() {
         mesh.flush();
         for limb in strained {
-            limb.draw_cracks();
+            limb.draw_cracks(wood.outline);
         }
     }
 }
@@ -1091,20 +1093,20 @@ fn parent_piece(limbs: &[Limb], pieces: &[(LimbId, Piece)], attachment: Attachme
 }
 
 /// The dark outline: the piece grown outward by `OUTLINE` all round.
-fn outline_piece(mesh: &mut WoodMesh, piece: &Piece, caps: &[Option<Cap>; 2]) {
+fn outline_piece(mesh: &mut WoodMesh, piece: &Piece, caps: &[Option<Cap>; 2], color: Color) {
     let n = piece.top.len();
     let first = mesh.start(2 * n, 6 * (n - 1));
     for k in 0..n {
-        mesh.vertex(piece.top[k] + piece.top_n[k] * OUTLINE, PLAIN, BARK_DARK);
-        mesh.vertex(piece.bottom[k] + piece.bottom_n[k] * OUTLINE, PLAIN, BARK_DARK);
+        mesh.vertex(piece.top[k] + piece.top_n[k] * OUTLINE, PLAIN, color);
+        mesh.vertex(piece.bottom[k] + piece.bottom_n[k] * OUTLINE, PLAIN, color);
     }
     for k in 0..n as u16 - 1 {
         let i = first + 2 * k;
         mesh.quad(i, i + 2, i + 3, i + 1);
     }
     for cap in caps.iter().flatten() {
-        let rim = cap.chain.iter().map(|c| (c.pos + c.normal * OUTLINE, PLAIN, BARK_DARK));
-        mesh.fan((cap.centre, PLAIN, BARK_DARK), rim);
+        let rim = cap.chain.iter().map(|c| (c.pos + c.normal * OUTLINE, PLAIN, color));
+        mesh.fan((cap.centre, PLAIN, color), rim);
     }
 }
 
@@ -1137,15 +1139,15 @@ fn shade_piece(mesh: &mut WoodMesh, piece: &Piece, palette: &Palette, u0: f32, s
     }
 }
 
-/// Fill the rounded tip, or the pale, splintered wood where it snapped.
-fn shade_caps(mesh: &mut WoodMesh, caps: &[Option<Cap>; 2], palette: &Palette, u0: f32) {
+/// Fill the rounded tip, or the pale, `splinter`ed wood where it snapped.
+fn shade_caps(mesh: &mut WoodMesh, caps: &[Option<Cap>; 2], palette: &Palette, u0: f32, splinter: Color) {
     for cap in caps.iter().flatten() {
         let last = cap.chain.len() - 1;
         let rim = cap.chain.iter().enumerate().map(|(j, c)| {
-            let color = if cap.snapped && j != 0 && j != last { WOOD_SPLINTER } else { palette.at(c.f) };
+            let color = if cap.snapped && j != 0 && j != last { splinter } else { palette.at(c.f) };
             (c.pos, grain_uv(u0 + cap.along + (c.pos - cap.centre).dot(cap.out), c.f), color)
         });
-        let centre = if cap.snapped { mix(WOOD_SPLINTER, palette.at(0.5), 0.4) } else { palette.at(0.5) };
+        let centre = if cap.snapped { mix(splinter, palette.at(0.5), 0.4) } else { palette.at(0.5) };
         mesh.fan((cap.centre, grain_uv(u0 + cap.along, 0.5), centre), rim);
     }
 }
@@ -1180,7 +1182,7 @@ fn smooth_min(a: f32, b: f32, k: f32) -> f32 {
 /// outlines cross (the narrow crotch on the tip side, the wide corner on the trunk side, and
 /// any others an unusually bent fork makes), and the fork's root blends into the parent.
 fn join(fork: &Piece, parent: &Piece, (fork_index, parent_index): (usize, usize), way: Emerges, fork_thickness: f32,
-        palettes: &[Palette]) -> Join {
+        palettes: &[Palette], crease_color: Color) -> Join {
     let size = (fork_thickness * 0.6).clamp(5.0, 12.0);
     let (fork_colors, parent_colors) = (&palettes[fork_index].rows, &palettes[parent_index].rows);
     let mut fillets = Vec::new();
@@ -1197,7 +1199,7 @@ fn join(fork: &Piece, parent: &Piece, (fork_index, parent_index): (usize, usize)
                 // A narrow crotch gets a shadowed crease
                 let angle = (a - corner).angle_between(b - corner).abs();
                 let crease = if angle.is_finite() { (1.0 - angle / std::f32::consts::FRAC_PI_2).clamp(0.0, 1.0) * 0.5 } else { 0.0 };
-                fillets.push(Fillet::new(a, corner, b, [ca, cb, mix(mix(ca, cb, 0.5), BARK_DARK, crease)]));
+                fillets.push(Fillet::new(a, corner, b, [ca, cb, mix(mix(ca, cb, 0.5), crease_color, crease)]));
             }
         }
     }
@@ -1410,8 +1412,9 @@ mod tests {
                         for (_, piece) in &mut pieces {
                             piece.finish();
                         }
-                        let palettes: Vec<Palette> = pieces.iter().map(|(id, _)| Palette::for_limb(&limbs[*id])).collect();
-                        let join = join(&pieces[f].1, &pieces[p].1, (f, p), way, limbs[fork].thickness, &palettes);
+                        let wood = &crate::look::OAK;
+                        let palettes: Vec<Palette> = pieces.iter().map(|(id, _)| Palette::for_limb(&limbs[*id], wood)).collect();
+                        let join = join(&pieces[f].1, &pieces[p].1, (f, p), way, limbs[fork].thickness, &palettes, wood.outline);
                         let root = &pieces[f].1;
                         let opaque = (0..root.top.len())
                             .take_while(|&k| root.along[k] - root.along[0] < join.blend.1)
