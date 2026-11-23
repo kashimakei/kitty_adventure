@@ -21,6 +21,13 @@ stage_assets() {
         mkdir -p "assets/$character"
         cp ../assets/"$character"/*.png ../assets/"$character"/anchors.json "assets/$character/"
     done
+    # The helpers and clues, once their art is in
+    for extra in helpers clues; do
+        if [ -f ../assets/"$extra"/anchors.json ]; then
+            mkdir -p "assets/$extra"
+            cp ../assets/"$extra"/*.png ../assets/"$extra"/anchors.json "assets/$extra/"
+        fi
+    done
     cp ../assets/Background_lvl1.png assets/background.png
     mkdir -p assets/parallax
     cp ../assets/parallax/*.png assets/parallax/
@@ -50,7 +57,9 @@ case "${1:-web}" in
         cargo build --release --target wasm32-unknown-unknown
         rm -rf dist
         mkdir -p dist
-        cp web/index.html web/mq_js_bundle.js dist/
+        version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+        sed "s|load(\"kitty.wasm\")|load(\"kitty.wasm?v=$version\")|" web/index.html > dist/index.html
+        cp web/mq_js_bundle.js dist/
         cp target/wasm32-unknown-unknown/release/kitty.wasm dist/
         cp -r assets/* dist/
         echo "Built dist/ ($(du -sh dist | cut -f1)); serve with: python3 -m http.server -d dist 8000" ;;
