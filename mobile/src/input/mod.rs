@@ -3,8 +3,9 @@
 //! Every input event is recorded in order between frames (through macroquad's input subscriber)
 //! and replayed at the top of the next one, so nothing is lost when several arrive together: a
 //! quick tap still counts even if its down and up land in the same frame. The touch gestures
-//! themselves are worked out in [`touch`].
+//! themselves are worked out in [`touch`] for play and in [`menu`] for the menus and map.
 
+pub mod menu;
 pub mod touch;
 
 use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
@@ -13,6 +14,7 @@ use macroquad::prelude::*;
 
 use crate::camera::View;
 use crate::platform;
+use menu::{MenuInput, MenuKeys, MenuRecogniser, MenuThresholds};
 use touch::{MarkKind, Phase, Recogniser, Thresholds, MARK_LIFE, MOUSE_ID};
 
 /// What the player is doing this frame.
@@ -96,6 +98,11 @@ pub struct Recorder {
     mouse_down: bool,
     mouse_at: Vec2,
     pub touch_seen: bool,
+    /// Where the mouse is (raw window pixels), for menus to light up what it's over. Not an
+    /// event: play never sees it.
+    pub hover: Option<Vec2>,
+    /// Mouse wheel turned since the last frame.
+    pub wheel: f32,
 }
 
 impl Recorder {
@@ -128,9 +135,14 @@ impl EventHandler for Recorder {
     }
 
     fn mouse_motion_event(&mut self, x: f32, y: f32) {
+        self.hover = Some(vec2(x, y));
         if self.mouse_down {
             self.mouse(Phase::Move, x, y);
         }
+    }
+
+    fn mouse_wheel_event(&mut self, _x: f32, y: f32) {
+        self.wheel += y;
     }
 
     fn mouse_button_up_event(&mut self, button: MouseButton, x: f32, y: f32) {
@@ -253,6 +265,10 @@ pub struct Input {
     recorder: Recorder,
     touch: Recogniser,
     keys: Keys,
+    menu: MenuRecogniser,
+    menu_keys: MenuKeys,
+    /// This frame's menu input, worked out by `poll`.
+    menu_input: MenuInput,
     /// The display's density, from the platform where it can tell.
     device_px_per_mm: Option<f32>,
 }
@@ -270,6 +286,9 @@ impl Input {
             recorder: Recorder::default(),
             touch: Recogniser::new(Thresholds::new(1.0)),
             keys: Keys::default(),
+            menu: MenuRecogniser::new(MenuThresholds::new(1.0)),
+            menu_keys: MenuKeys::default(),
+            menu_input: MenuInput::default(),
             device_px_per_mm: platform::pixels_per_mm(),
         }
     }
@@ -285,6 +304,7 @@ impl Input {
             self.recorder.mouse(Phase::Cancel, at.x, at.y);
         }
         self.touch.thresholds = Thresholds::new(self.px_per_mm() / view.scale);
+        self.menu.thresholds = MenuThresholds::new(self.px_per_mm() / view.scale);
         let now = date::now();
         self.touch.frame(now);
         // A long gap since the last frame means the app was away without saying so (a browser
@@ -297,12 +317,18 @@ impl Input {
         for event in self.recorder.events.drain(..) {
             match event {
                 Raw::Touch { id, phase, x, y } => {
-                    self.touch.event(id, phase, view.to_playfield(vec2(x, y) / dpi), now);
+                    let at = view.to_playfield(vec2(x, y) / dpi);
+                    self.touch.event(id, phase, at, now);
+                    self.menu.event(id, phase, at, now);
                 }
-                Raw::Key { code, down, repeat } => self.keys.event(code, down, repeat),
+                Raw::Key { code, down, repeat } => {
+                    self.keys.event(code, down, repeat);
+                    self.menu_keys.event(code, down, repeat);
+                }
                 Raw::Minimized => {
                     self.touch.release_all();
                     self.keys.release_all();
+                    self.menu.release_all();
                     away = true;
                 }
             }
@@ -319,19 +345,30 @@ impl Input {
             back: keys.back,
             any_tap: keys.any_tap || fingers.any_tap,
         };
+        let hover = self.recorder.hover.filter(|_| !self.recorder.mouse_down).map(|at| view.to_playfield(at / dpi));
+        self.menu_input = MenuInput { hover, wheel: std::mem::take(&mut self.recorder.wheel), nav: self.menu_keys.take(), ..self.menu.take() };
         (controls, away)
+    }
+
+    /// This frame's taps, drags, keys and pointing in menus (worked out by `poll`).
+    pub fn menu(&self) -> MenuInput {
+        self.menu_input
     }
 
     /// The app went away: every finger and key is let go, without leaping.
     fn release_all(&mut self) {
         self.touch.release_all();
         self.keys.release_all();
+        self.menu.release_all();
     }
 
     /// The screen changed: fingers and the jump key already down do nothing until let go.
     pub fn ignore_current(&mut self) {
         self.touch.ignore_current();
         self.keys.ignore_current();
+        self.menu.ignore_current();
+        self.menu_keys.ignore_current();
+        self.menu_input = MenuInput::default();
     }
 
     /// Whether the player is on a touch screen (for showing gestures rather than keys).

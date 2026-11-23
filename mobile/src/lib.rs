@@ -28,6 +28,7 @@ pub mod save;
 pub mod sprites;
 pub mod story;
 pub mod tree;
+pub mod ui;
 pub mod world;
 
 use macroquad::prelude::*;
