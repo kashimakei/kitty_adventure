@@ -368,7 +368,7 @@ pub fn draw_page(assets: &Assets, page: &Page, time: f32) {
     clip(Some(grow(frame, -6.0)));
     page_art(assets, &page.art, frame, t, time, art_in);
     clip(None);
-    rounded_outline(frame, 30.0, 6.0, fade(rgb(0.98, 0.90, 0.72), art_in));
+    rounded_outline(frame, 30.0, 6.0, fade(FRAME_EDGE, art_in));
 
     // The words, on a card sized to fit them
     let text_in = appear(time, 0.2, 0.6);
@@ -388,6 +388,9 @@ pub fn draw_page(assets: &Assets, page: &Page, time: f32) {
     }
 }
 
+/// The cream edge round a picture.
+const FRAME_EDGE: Color = Color::new(0.98, 0.90, 0.72, 1.0);
+
 /// The picture-book frame each story page draws its art in.
 pub(crate) fn picture_frame(r: Rect, mood: Mood, alpha: f32) {
     drop_shadow(r, 30.0, alpha);
@@ -397,7 +400,9 @@ pub(crate) fn picture_frame(r: Rect, mood: Mood, alpha: f32) {
         _ => (rgb(0.55, 0.80, 0.95), rgb(0.80, 0.93, 0.88)),
     };
     rounded_rect(r, 30.0, fade(top, alpha), fade(bottom, alpha));
-    // Rolling hills along the bottom
+    // Rolling hills along the bottom, kept inside the frame down to its rounded bottom corners,
+    // where the strip of ground takes over
+    clip(Some(Rect::new(r.x, r.y, r.w, r.h - 30.0)));
     let ground = if matches!(mood, Mood::Night) { rgb(0.12, 0.22, 0.18) } else { rgb(0.42, 0.66, 0.30) };
     let hill = Rect::new(r.x, r.bottom() - 120.0, r.w, 120.0);
     for (i, (dx, w)) in [(-0.1, 0.7), (0.45, 0.75)].into_iter().enumerate() {
@@ -406,6 +411,7 @@ pub(crate) fn picture_frame(r: Rect, mood: Mood, alpha: f32) {
         let cx = hill.x + hill.w * (dx + w / 2.0);
         draw_ellipse(cx, hill.bottom() - 10.0, hill.w * w / 2.0 + 30.0, 70.0 + i as f32 * 14.0, 0.0, c);
     }
+    clip(None);
     rounded_rect(Rect::new(r.x, r.bottom() - 60.0, r.w, 60.0), 30.0, fade(ground, alpha), fade(ground, alpha));
 }
 
@@ -1046,18 +1052,24 @@ pub fn draw_clue_card(assets: &Assets, region: &Region, title: &str, clue: &Clue
     let tumble = vec2(r.x + drift, r.y + 120.0 + (t * 2.0).sin() * 24.0);
     fit_sprite_centred(&assets.friends, &track.friend.storm_frame((t * 3.0) as usize), tumble, 100.0, 1.0, fade(WHITE, pic_in));
     clip(None);
+    rounded_outline(r, 30.0, 6.0, fade(FRAME_EDGE, pic_in));
     clue_icon(assets, clue.object, vec2(r.right() - 64.0, r.bottom() - 58.0), 84.0, pic_in);
 
-    // The helper, perched on the frame's corner once there's a picture of them, says what they saw
+    // The helper hops onto the frame's corner and says what they saw: excited, then pointing the
+    // way, chattering as they talk
     let helper = &region.helper;
-    let perch = vec2(r.x + 70.0, r.bottom() + 4.0);
-    let talking = ((t * 4.0) as usize).is_multiple_of(2);
-    let frame = format!("{}_{}_0", helper.sprite, if talking { "talk" } else { "idle" });
-    let idle = format!("{}_idle_0", helper.sprite);
+    let perch = vec2(r.x + 70.0, r.bottom() + 2.0);
+    let (pose, held) = helper_pose(time);
+    let frame = format!("{}_{pose}", helper.sprite);
+    let frame = if assets.helpers.has(&frame) { frame } else { format!("{}_idle_0", helper.sprite) };
     if assets.helpers.has(&frame) {
-        assets.helpers.draw_ex(&frame, perch, 1.0, 1.0, 0.0, fade(WHITE, pic_in));
-    } else if assets.helpers.has(&idle) {
-        assets.helpers.draw_ex(&idle, perch, 1.0, 1.0, 0.0, fade(WHITE, pic_in));
+        let shown = appear(time, HELPER_ARRIVES, 0.15);
+        let hop = ((held / 0.25).clamp(0.0, 1.0) * PI).sin() * 10.0;
+        let chatter = if pose.starts_with("talk") { (time * 16.0).sin() * 0.025 } else { 0.0 };
+        // On the frame's edge, which the feet stand on
+        shadow_ellipse(vec2(perch.x, r.bottom() - 3.0), 30.0 - hop, 3.0, 0.3 * shown);
+        assets.helpers.draw_stretched(&frame, perch - vec2(0.0, hop), 1.0, HELPER_SCALE * vec2(1.0 - chatter, 1.0 + chatter),
+                                      0.0, fade(WHITE, shown));
     }
     let say_in = appear(time, 0.4, 0.4);
     let bubble = speech_bubble(clue.helper_line, helper.full_name, r.bottom() + 36.0 + (1.0 - say_in) * 20.0,
@@ -1068,6 +1080,31 @@ pub fn draw_clue_card(assets: &Assets, region: &Region, title: &str, clue: &Clue
     if time > 0.9 {
         tap_prompt("Tap to continue", 1128.0, t);
     }
+}
+
+/// The helper on the clue card: drawn at this scale (its frames are cut large, to stay sharp),
+/// hopping on at HELPER_ARRIVES and talking from HELPER_TALKS, when its poses start to cycle.
+const HELPER_SCALE: f32 = 0.62;
+const HELPER_ARRIVES: f32 = 0.3;
+const HELPER_TALKS: f32 = 0.7;
+const HELPER_CYCLE: [(&str, f32); 3] = [("talk_1", 0.7), ("talk_0", 2.7), ("idle_0", 1.1)];
+
+/// The helper's pose `time` into the clue card, and how long it has held it (negative before it
+/// arrives).
+fn helper_pose(time: f32) -> (&'static str, f32) {
+    let talking = time - HELPER_TALKS;
+    if talking < 0.0 {
+        return ("idle_0", time - HELPER_ARRIVES);
+    }
+    let period: f32 = HELPER_CYCLE.iter().map(|&(_, length)| length).sum();
+    let mut into = talking % period;
+    for (pose, length) in HELPER_CYCLE {
+        if into < length {
+            return (pose, into);
+        }
+        into -= length;
+    }
+    ("idle_0", 0.0)
 }
 
 /// Out of hearts: a card over the level, with room for Retry and Map below.
@@ -1832,6 +1869,25 @@ pub mod paint {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_clue_cards_helper_gets_excited_then_points_then_listens() {
+        assert_eq!(helper_pose(0.0).0, "idle_0");
+        assert!(helper_pose(HELPER_ARRIVES - 0.1).1 < 0.0, "not there yet");
+        assert_eq!(helper_pose(HELPER_TALKS), ("talk_1", 0.0));
+        assert_eq!(helper_pose(HELPER_TALKS + 1.0).0, "talk_0");
+        assert_eq!(helper_pose(HELPER_TALKS + 3.6).0, "idle_0");
+        assert_eq!(helper_pose(HELPER_TALKS + 4.6).0, "talk_1", "and round again");
+        let mut last = helper_pose(0.0).0;
+        let mut changes = 0;
+        for k in 0..2000 {
+            let (pose, held) = helper_pose(k as f32 * 0.01);
+            assert!(held < 2.8, "no pose held for long");
+            changes += usize::from(pose != last);
+            last = pose;
+        }
+        assert!((10..=16).contains(&changes), "{changes} pose changes in 20 s");
+    }
 
     /// A quick tapper can't leave the first level's intro before the how-to-play card is fully in;
     /// later levels move on as soon as before.

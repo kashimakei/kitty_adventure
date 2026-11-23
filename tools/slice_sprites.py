@@ -38,6 +38,11 @@ MIN_SPRITE_AREA = 6000      # px; anything smaller is a label letter or a motion
 NOSE_TO_CENTER = 40
 GRIP_BAND = 6  # px below the topmost pixel averaged to find a gripping paw
 HEAD_WHITE = 215  # an eagle's head is the near-white feathers in the front half of the frame
+# A perched critter pins its feet under its head and chest, which stay put while wings, tails and
+# beaks swing out: what's left after wearing away this fraction of the frame's height from every
+# edge, down this fraction of the way from its top
+BODY_WEAR = 0.09
+BODY_UPPER = 0.55
 
 # Damage masks. An eagle's beak and feet are the only golden-yellow parts; the mask grows a few px
 # to take in the dark claw tips. A dog's paws are cream like its chest, so they're found by
@@ -246,6 +251,28 @@ CHARACTERS = {
             "ribbon":  ("clues", (1920, 850, 2400, 1310), "middle"),
         },
     },
+    "helpers": {
+        "out": "assets/helpers",
+        # Mint, like the clue sheet
+        "background": (168, 215, 197),
+        "sheets": {"helpers": "assets/source/helpers_sheet.jpg"},
+        "reference": ("robin_idle", 0),
+        # Drawn smaller than this on the clue card, so they stay sharp on a phone
+        "target_height": 160,
+        # One helper per row: perched and listening, then pointing the way and excited, talking
+        "animations": {
+            "robin_idle":      ("helpers", (0, 0, 597, 504), "body"),
+            "robin_talk":      ("helpers", (597, 0, 1792, 504), "body"),
+            "owl_idle":        ("helpers", (0, 504, 597, 987), "body"),
+            "owl_talk":        ("helpers", (597, 504, 1792, 987), "body"),
+            "pika_idle":       ("helpers", (0, 987, 597, 1473), "body"),
+            "pika_talk":       ("helpers", (597, 987, 1792, 1473), "body"),
+            "kingfisher_idle": ("helpers", (0, 1473, 597, 1938), "body"),
+            "kingfisher_talk": ("helpers", (597, 1473, 1792, 1938), "body"),
+            "bat_idle":        ("helpers", (0, 1938, 597, 2400), "body"),
+            "bat_talk":        ("helpers", (597, 1938, 1792, 2400), "body"),
+        },
+    },
     "items": {
         "out": "assets/items",
         "background": (185, 185, 185),
@@ -341,7 +368,8 @@ def cut_frame(sheet, rect, mask):
 def anchor_for(frame, mode, nose_to_center=NOSE_TO_CENTER):
     """The point the game pins to the hitbox: under the body at the lowest pixel ("nose",
     "center"), the topmost gripping paw ("grip"), the middle of a white head ("head"), the
-    frame's middle ("middle"), its centre of mass ("centroid") or its bottom-left ("base")."""
+    frame's middle ("middle"), its centre of mass ("centroid"), its bottom-left ("base"), or the
+    lowest pixel under the head and chest ("body")."""
     w, h = frame.get_size()
     if mode == "center":
         return (w // 2, h - 1)
@@ -357,11 +385,35 @@ def anchor_for(frame, mode, nose_to_center=NOSE_TO_CENTER):
         top = next(y for y in range(h) if any(solid.get_at((x, y)) for x in range(w)))
         xs = [x for y in range(top, min(h, top + GRIP_BAND)) for x in range(w) if solid.get_at((x, y))]
         return (round(sum(xs) / len(xs)), top)
+    if mode == "body":
+        return (round(upper_body_x(pygame.mask.from_surface(frame, 127), w, h)), h - 1)
     if mode == "head":
         points = [(x, y) for y in range(h) for x in range(w * 2 // 5, w)
                   if all(c >= HEAD_WHITE for c in frame.get_at((x, y))[:3]) and frame.get_at((x, y))[3] > 200]
         return (round(sum(p[0] for p in points) / len(points)), round(sum(p[1] for p in points) / len(points)))
     return (max(0, w - 1 - nose_to_center), h - 1)
+
+
+def upper_body_x(solid, w, h):
+    """The middle of a critter's head and chest, across: the solid pixels left once the thin
+    parts (wings, tails, beaks) are worn away, in the upper part of what's left."""
+    r = max(2, round(h * BODY_WEAR))
+    # A summed-area table of the solid pixels; a pixel survives if the square around it is solid
+    table = [[0] * (w + 1) for _ in range(h + 1)]
+    for y in range(h):
+        run = 0
+        for x in range(w):
+            run += solid.get_at((x, y))
+            table[y + 1][x + 1] = table[y][x + 1] + run
+    side = 2 * r + 1
+    kept = [(x, y) for y in range(r, h - r) for x in range(r, w - r)
+            if table[y + r + 1][x + r + 1] - table[y - r][x + r + 1] - table[y + r + 1][x - r] + table[y - r][x - r] == side * side]
+    if not kept:
+        return w / 2
+    top = min(y for _, y in kept)
+    cut = top + (max(y for _, y in kept) - top) * BODY_UPPER
+    upper = [x for x, y in kept if y <= cut]
+    return sum(upper) / len(upper)
 
 
 def is_golden(colour):

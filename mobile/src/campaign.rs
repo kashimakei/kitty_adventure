@@ -754,6 +754,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn every_helper_has_its_poses() {
+        let manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string("../assets/helpers/anchors.json").unwrap()).unwrap();
+        for region in REGION_IDS {
+            let helper = &region.info().helper;
+            for pose in ["idle_0", "talk_0", "talk_1"] {
+                let file = format!("{}_{pose}.png", helper.sprite);
+                assert!(manifest["anchors"].get(&file).is_some(), "{}: no {file}", helper.full_name);
+            }
+        }
+    }
+
     /// Every level's plan is sound on many seeds, not just its own, so a tuning that needs lucky
     /// seeds shows up here.
     #[test]

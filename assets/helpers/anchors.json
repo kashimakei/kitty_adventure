@@ -1,0 +1,103 @@
+{
+  "scale": 0.4456824512534819,
+  "animations": {
+    "robin_idle": [
+      "robin_idle_0.png"
+    ],
+    "robin_talk": [
+      "robin_talk_0.png",
+      "robin_talk_1.png"
+    ],
+    "owl_idle": [
+      "owl_idle_0.png"
+    ],
+    "owl_talk": [
+      "owl_talk_0.png",
+      "owl_talk_1.png"
+    ],
+    "pika_idle": [
+      "pika_idle_0.png"
+    ],
+    "pika_talk": [
+      "pika_talk_0.png",
+      "pika_talk_1.png"
+    ],
+    "kingfisher_idle": [
+      "kingfisher_idle_0.png"
+    ],
+    "kingfisher_talk": [
+      "kingfisher_talk_0.png",
+      "kingfisher_talk_1.png"
+    ],
+    "bat_idle": [
+      "bat_idle_0.png"
+    ],
+    "bat_talk": [
+      "bat_talk_0.png",
+      "bat_talk_1.png"
+    ]
+  },
+  "anchors": {
+    "robin_idle_0.png": [
+      105,
+      159
+    ],
+    "robin_talk_0.png": [
+      119,
+      168
+    ],
+    "robin_talk_1.png": [
+      101,
+      171
+    ],
+    "owl_idle_0.png": [
+      77,
+      171
+    ],
+    "owl_talk_0.png": [
+      90,
+      181
+    ],
+    "owl_talk_1.png": [
+      92,
+      185
+    ],
+    "pika_idle_0.png": [
+      89,
+      174
+    ],
+    "pika_talk_0.png": [
+      88,
+      186
+    ],
+    "pika_talk_1.png": [
+      79,
+      186
+    ],
+    "kingfisher_idle_0.png": [
+      63,
+      163
+    ],
+    "kingfisher_talk_0.png": [
+      85,
+      171
+    ],
+    "kingfisher_talk_1.png": [
+      95,
+      181
+    ],
+    "bat_idle_0.png": [
+      88,
+      158
+    ],
+    "bat_talk_0.png": [
+      79,
+      171
+    ],
+    "bat_talk_1.png": [
+      119,
+      171
+    ]
+  },
+  "hits": {}
+}
