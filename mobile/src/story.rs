@@ -1074,7 +1074,7 @@ pub fn draw_clue_card(assets: &Assets, region: &Region, title: &str, clue: &Clue
 pub fn draw_try_again(assets: &Assets, time: f32) {
     let t = ambient_time();
     let dim = appear(time, 0.0, 0.3);
-    draw_rectangle(-400.0, -400.0, VIEW_W + 800.0, VIEW_H + 800.0, Color::new(0.03, 0.05, 0.08, 0.6 * dim));
+    dim_screen(Color::new(0.03, 0.05, 0.08, 0.6 * dim));
     let drop = ease_out_back(time / 0.5);
     let r = Rect::new(60.0, 330.0 - (1.0 - drop) * 120.0, 480.0, 360.0);
     panel(r, 30.0, dim);
@@ -1155,7 +1155,7 @@ enum Legend {
 pub fn draw_paused(assets: &Assets, time: f32, touch: bool) {
     let t = ambient_time();
     let dim = appear(time, 0.0, 0.2);
-    draw_rectangle(-400.0, -400.0, VIEW_W + 800.0, VIEW_H + 800.0, Color::new(0.03, 0.05, 0.08, 0.6 * dim));
+    dim_screen(Color::new(0.03, 0.05, 0.08, 0.6 * dim));
     let bounce = "Hold as you land, let go as the ring glows blue: bounce higher! Too high and branches snap.";
     let rows = if touch {
         [
@@ -1766,6 +1766,14 @@ pub mod paint {
         let v = |x: f32, y: f32, c: Color| Vertex::new(x, y, 0.0, 0.0, 0.0, c);
         let vertices = vec![v(r.x, r.y, top), v(r.right(), r.y, top), v(r.right(), r.bottom(), bottom), v(r.x, r.bottom(), bottom)];
         draw_mesh(&Mesh { vertices, indices: vec![0, 1, 2, 0, 2, 3], texture: None });
+    }
+
+    /// Darken the whole window, letterboxes and all, whatever the camera.
+    pub fn dim_screen(color: Color) {
+        push_camera_state();
+        set_default_camera();
+        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), color);
+        pop_camera_state();
     }
 
     /// A soft shadow under a card.

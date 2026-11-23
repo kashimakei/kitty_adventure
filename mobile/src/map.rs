@@ -150,12 +150,15 @@ pub struct MapState {
     /// Kitty hopping from one stone to a newly opened one: from, to, and how long she's been at it.
     walk: Option<(Stop, Stop, f32)>,
     toast: Option<(String, f32)>,
+    /// Whether a tap can press the card's Play: only once it has settled with no finger down, so
+    /// a finger that went down while it slid in (a double tap on a stone) can't.
+    play_armed: bool,
 }
 
 impl MapState {
     pub fn new(save: &SaveData) -> Self {
         let stop = kitty_stop(save);
-        Self { scroll: scroll_for(stop), vel: 0.0, target: None, card: None, focus: stop, walk: None, toast: None }
+        Self { scroll: scroll_for(stop), vel: 0.0, target: None, card: None, focus: stop, walk: None, toast: None, play_armed: false }
     }
 
     /// Back on the map. After a clear that opened a stone, Kitty hops from `from` to it and its
@@ -188,6 +191,7 @@ impl MapState {
 
     fn open_card(&mut self, stop: Stop) {
         self.card = Some((stop, 0.0));
+        self.play_armed = false;
         self.focus = stop;
         self.target = Some(scroll_above_card(stop));
     }
@@ -239,10 +243,13 @@ impl MapState {
         // The card: Play (or Enter, if it was already open), its close button, or a tap
         // anywhere else to close it
         if let Some((stop, open_for)) = self.card {
-            // Play only once the card has slid into place (so a quick double tap on a stone
-            // can't press it unseen), and Enter only once it was open before this frame
+            // Play by a tap that started once the card was in place (so a quick double tap on a
+            // stone can't press it unseen), or by Enter once it was open before this frame
             let settled = open_for >= CARD_IN;
-            if settled && ui::pressed(input, play_button(0.0), card_was_open) {
+            let armed = self.play_armed;
+            self.play_armed = settled && (armed || (input.held.is_none() && input.tap.is_none()));
+            let play = play_button(0.0);
+            if (armed && input.tapped(play)) || (settled && card_was_open && input.nav == Some(Nav::Activate)) {
                 return Some(match stop {
                     Stop::Level(id) => MapAction::Play(id),
                     Stop::Endless => MapAction::PlayEndless,
@@ -258,8 +265,9 @@ impl MapState {
                 None => {}
             }
         }
-        // A stone tapped (where the finger went down and came up)
-        if let Some(tap) = input.tap.filter(|tap| !BAR.contains(tap.up)) {
+        // A stone tapped (where the finger went down and came up), below the bar, which also
+        // covers a tall screen's letterbox above it
+        if let Some(tap) = input.tap.filter(|tap| tap.down.y > BAR.bottom() && tap.up.y > BAR.bottom()) {
             let on = |p: Vec2| stop_at(p + vec2(0.0, self.scroll));
             if let Some(stop) = on(tap.up).filter(|&stop| on(tap.down) == Some(stop)) {
                 if is_open(save, stop) {
@@ -331,16 +339,20 @@ impl MapState {
 /// Kitty sits just to the left of her stone.
 const KITTY_SEAT: Vec2 = Vec2::from_array([-64.0, 14.0]);
 
-/// How far a turn of the mouse wheel scrolls. Browsers report pixels, Windows 120 a notch, and
-/// the rest a notch (or a fraction of one, on a trackpad) at a time.
+/// How far a turn of the mouse wheel scrolls, by what each platform reports: browsers pixels,
+/// Windows 120 a notch (less at a time from a precision touchpad), macOS pixels or 10 a notch,
+/// and X11 a notch at a time. A frame never scrolls more than half a screen.
 fn wheel_distance(wheel: f32) -> f32 {
-    if cfg!(target_arch = "wasm32") {
+    let distance = if cfg!(target_arch = "wasm32") {
         wheel * 0.8
-    } else if wheel.abs() >= 30.0 {
+    } else if cfg!(windows) {
         wheel / 120.0 * WHEEL_STEP
+    } else if cfg!(target_os = "macos") {
+        wheel * 4.0
     } else {
         wheel * WHEEL_STEP
-    }
+    };
+    distance.clamp(-VIEW_H * 0.5, VIEW_H * 0.5)
 }
 
 fn locked_message(stop: Stop) -> String {
@@ -394,7 +406,8 @@ pub fn draw(assets: &Assets, state: &MapState, save: &SaveData, input: &MenuInpu
         let alpha = (left / 0.3).min(1.0);
         let w = paint::measure(message, 28.0) + 60.0;
         let r = Rect::new(300.0 - w / 2.0, BAR.bottom() + 16.0, w, 64.0);
-        paint::rounded_rect(r, 24.0, paint::fade(INK, 0.85 * alpha), paint::fade(INK, 0.85 * alpha));
+        paint::rounded_rect(r, 24.0, paint::fade(INK, alpha), paint::fade(INK, alpha));
+        paint::rounded_outline(r, 24.0, 3.0, paint::fade(CREAM, 0.3 * alpha));
         paint::text(message, 300.0, r.y + 42.0, 28.0, paint::fade(CREAM, alpha), Align::Center);
     }
 }
@@ -477,16 +490,16 @@ fn draw_region(assets: &Assets, region: RegionId, scroll: f32, save: &SaveData, 
             }
         }
         RegionId::TallestTree => {
-            // A bank of cloud where it meets the sky
-            for i in 0..16 {
-                let radius = 34.0 + paint::hash(i + 300) * 16.0;
-                draw_circle(-30.0 + i as f32 * 44.0, r.y + 6.0 + paint::hash(i + 310) * 10.0, radius, paint::rgb(0.86, 0.92, 1.0));
-            }
-            // The great trunk itself, rising through the clouds
+            // The great trunk itself
             let trunk = Rect::new(220.0, r.y, 160.0, r.h);
             draw_rectangle(trunk.x, trunk.y, trunk.w, trunk.h, wood.trunk);
             draw_rectangle(trunk.x + 26.0, trunk.y, 22.0, trunk.h, paint::fade(wood.light, 0.5));
             draw_rectangle(trunk.right() - 34.0, trunk.y, 34.0, trunk.h, paint::fade(wood.outline, 0.6));
+            // A bank of cloud where it meets the sky, the trunk rising out of it
+            for i in 0..16 {
+                let radius = 34.0 + paint::hash(i + 300) * 16.0;
+                draw_circle(-30.0 + i as f32 * 44.0, r.y + 6.0 + paint::hash(i + 310) * 10.0, radius, paint::rgb(0.86, 0.92, 1.0));
+            }
             for i in 0..4 {
                 if let Some(cloud) = assets.scenery.cloud(i + 3) {
                     let size = vec2(cloud.width(), cloud.height()) * 0.55;
@@ -727,8 +740,8 @@ fn draw_card(assets: &Assets, state: &MapState, save: &SaveData, input: &MenuInp
         Stop::Endless => {
             paint::text("BONUS", 300.0, r.y + 52.0, 22.0, GOLD_TEXT, Align::Center);
             paint::outlined("Endless Climb", 300.0, r.y + 106.0, 46.0, CREAM, INK, Align::Center);
-            paint::text("How high can Kitty climb? The critters get", 300.0, r.y + 170.0, 22.0, CREAM, Align::Center);
-            paint::text("wilder each climb, and the run ends when her hearts do.", 300.0, r.y + 200.0, 22.0, CREAM, Align::Center);
+            paint::text("How high can Kitty go? Each climb is wilder, and", 300.0, r.y + 170.0, 22.0, CREAM, Align::Center);
+            paint::text("her hearts refill; the run ends if they run out.", 300.0, r.y + 200.0, 22.0, CREAM, Align::Center);
             paint::text(&format!("Best {}", thousands(save.endless.best_score)), 300.0, r.y + 262.0, 30.0, GOLD_TEXT, Align::Center);
             if save.endless.best_climb > 0 {
                 paint::text(&format!("Furthest: climb {}", save.endless.best_climb), 300.0, r.y + 300.0, 24.0, CREAM, Align::Center);
@@ -802,6 +815,36 @@ mod tests {
         }
         let play = play_button(0.0).center();
         assert_eq!(map.update(&tap(play), &save, 0.016), Some(MapAction::Play(LevelId(0))));
+    }
+
+    #[test]
+    fn a_double_tap_on_a_stone_never_presses_play() {
+        let save = SaveData::default();
+        let mut map = MapState::new(&save);
+        let first = Stop::Level(LevelId(0));
+        let on_stone = stone(first) - vec2(0.0, map.scroll);
+        let play = play_button(0.0).center();
+        let tap = |down: Vec2, up: Vec2| MenuInput { tap: Some(crate::input::menu::Tap { down, up }), ..MenuInput::default() };
+        map.update(&tap(on_stone, on_stone), &save, 0.016);
+        assert!(map.card.is_some());
+        // The second tap goes down while the card slides in, is held past it settling, and lifts
+        // on Play
+        let held = MenuInput { held: Some(play), ..MenuInput::default() };
+        for _ in 0..30 {
+            map.update(&held, &save, 0.016);
+        }
+        assert_eq!(map.update(&tap(play, play), &save, 0.016), None, "a finger down before the card settled");
+        // A fresh tap once it's in place plays
+        map.update(&MenuInput::default(), &save, 0.016);
+        assert_eq!(map.update(&tap(play, play), &save, 0.016), Some(MapAction::Play(LevelId(0))));
+    }
+
+    #[test]
+    fn wheel_turns_scroll_a_step_and_never_more_than_half_a_screen() {
+        assert!(wheel_distance(1.0e6) <= VIEW_H * 0.5 && wheel_distance(-1.0e6) >= -VIEW_H * 0.5);
+        let notch = if cfg!(windows) { 120.0 } else if cfg!(target_os = "macos") { 10.0 } else { 1.0 };
+        assert!((20.0..=WHEEL_STEP * 1.01).contains(&wheel_distance(notch)), "{}", wheel_distance(notch));
+        assert!(wheel_distance(notch * 0.5) < wheel_distance(notch), "smaller turns scroll less");
     }
 
     #[test]
