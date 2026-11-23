@@ -164,6 +164,22 @@ fn keys_move_the_focus_and_press_it() {
     assert_eq!(ui::focus_step(None, 5, 3), 2);
 }
 
+/// A running key still held when a menu opens doesn't wander the focus with its repeats.
+#[test]
+fn a_key_held_across_a_screen_change_does_nothing_until_let_go() {
+    let mut keys = MenuKeys::default();
+    keys.event(KeyCode::Right, true, false);
+    keys.take();
+    keys.ignore_current();
+    keys.event(KeyCode::Right, true, true);
+    assert_eq!(keys.take(), None, "its repeats are ignored");
+    keys.event(KeyCode::Down, true, false);
+    assert_eq!(keys.take(), Some(Nav::Down), "other keys work");
+    keys.event(KeyCode::Right, false, false);
+    keys.event(KeyCode::Right, true, false);
+    assert_eq!(keys.take(), Some(Nav::Right), "pressed afresh, it works again");
+}
+
 #[test]
 fn buttons_never_overlap_and_keep_clear_of_the_pause_button() {
     let pause = Rect::new(PAUSE_ZONE_X, 0.0, 600.0 - PAUSE_ZONE_X, PAUSE_ZONE_Y);

@@ -72,6 +72,21 @@ pub fn star(centre: Vec2, radius: f32, fill: Color, outline: Color) {
     }
 }
 
+/// The round back button in the top left corner, over the map and the level intro.
+pub const BACK: Rect = Rect { x: 14.0, y: 20.0, w: 80.0, h: 80.0 };
+
+/// Draw the back button: an arrow in a soft circle, brighter while a finger or the mouse is on it.
+pub fn draw_back(input: &MenuInput, alpha: f32) {
+    let (cx, cy) = (BACK.center().x, BACK.center().y);
+    let lit = input.pointing_at(BACK);
+    draw_circle(cx, cy, 34.0, paint::fade(paint::INK, 0.45 * alpha));
+    draw_circle(cx, cy, 31.0, paint::fade(paint::CREAM, if lit { 0.45 } else { 0.22 } * alpha));
+    let arrow = paint::fade(paint::CREAM, alpha);
+    draw_line(cx + 12.0, cy, cx - 12.0, cy, 6.0, arrow);
+    draw_line(cx - 14.0, cy + 2.0, cx, cy - 14.0, 6.0, arrow);
+    draw_line(cx - 14.0, cy - 2.0, cx, cy + 14.0, 6.0, arrow);
+}
+
 /// The keyboard's focus over `n` buttons after `nav`: back with Left or Up, on with Right or
 /// Down (or Tab), wrapping round.
 pub fn focus_step(nav: Option<Nav>, focus: usize, n: usize) -> usize {

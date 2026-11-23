@@ -181,15 +181,26 @@ impl MenuRecogniser {
 }
 
 /// Keys in menus: arrows (or WASD) and Tab move the focus, Enter or Space press it, Escape or
-/// Back go back, Page Up and Down scroll. Held keys repeat.
+/// Back go back, Page Up and Down scroll. Held keys repeat, except one already held when the
+/// screen changed (a running key still down when a menu opens), until it's let go.
 #[derive(Default)]
 pub struct MenuKeys {
     nav: Option<Nav>,
+    down: Vec<KeyCode>,
+    held_over: Vec<KeyCode>,
 }
 
 impl MenuKeys {
     pub fn event(&mut self, code: KeyCode, down: bool, _repeat: bool) {
         if !down {
+            self.down.retain(|&k| k != code);
+            self.held_over.retain(|&k| k != code);
+            return;
+        }
+        if !self.down.contains(&code) {
+            self.down.push(code);
+        }
+        if self.held_over.contains(&code) {
             return;
         }
         let nav = match code {
@@ -208,6 +219,13 @@ impl MenuKeys {
 
     pub fn ignore_current(&mut self) {
         self.nav = None;
+        self.held_over = self.down.clone();
+    }
+
+    /// Keys held when the app was put away never send their release.
+    pub fn release_all(&mut self) {
+        self.down.clear();
+        self.held_over.clear();
     }
 
     pub fn take(&mut self) -> Option<Nav> {

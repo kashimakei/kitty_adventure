@@ -920,8 +920,9 @@ pub fn draw_level_clear(assets: &Assets, card: &ClearCard, tally: &Tally, time: 
     let heading = if matches!(card.nest, NestGoal::Clue { .. }) { "Clue Found!" } else { "Level Clear!" };
     outlined(heading, 300.0, 96.0 - (1.0 - pop) * 160.0, fit_size(heading, 68.0, 560.0), GOLD_TEXT, INK, Align::Center);
 
-    // The friend cheering in the nest (or the clue, caught on the branch), sparkles about
-    let nest_at = vec2(300.0, 320.0);
+    // The friend cheering in the nest (or the clue, caught on the branch), sparkles about; low
+    // enough that hopping ears clear the level's name
+    let nest_at = vec2(300.0, 350.0);
     for i in 0..5 {
         let a = t * 0.8 + i as f32 * TAU / 5.0;
         let at = nest_at + vec2(a.cos() * 130.0, -60.0 + a.sin() * 50.0);
@@ -942,7 +943,7 @@ pub fn draw_level_clear(assets: &Assets, card: &ClearCard, tally: &Tally, time: 
     shadowed(card.title, 300.0, 142.0, 26.0, CREAM, Align::Center);
 
     let say_in = appear(time, 0.3, 0.4);
-    let bubble = speech_bubble(card.line, card.speaker, 352.0 + (1.0 - say_in) * 20.0,
+    let bubble = speech_bubble(card.line, card.speaker, 382.0 + (1.0 - say_in) * 20.0,
                                vec2(nest_at.x, nest_at.y + 6.0), 24.0, say_in);
 
     // The tally, counting up one row at a time
@@ -1071,7 +1072,7 @@ pub fn draw_clue_card(assets: &Assets, region: &Region, title: &str, clue: &Clue
 pub fn draw_try_again(assets: &Assets, time: f32) {
     let t = ambient_time();
     let dim = appear(time, 0.0, 0.3);
-    draw_rectangle(0.0, 0.0, VIEW_W, VIEW_H, Color::new(0.03, 0.05, 0.08, 0.6 * dim));
+    draw_rectangle(-400.0, -400.0, VIEW_W + 800.0, VIEW_H + 800.0, Color::new(0.03, 0.05, 0.08, 0.6 * dim));
     let drop = ease_out_back(time / 0.5);
     let r = Rect::new(60.0, 330.0 - (1.0 - drop) * 120.0, 480.0, 360.0);
     panel(r, 30.0, dim);
@@ -1129,8 +1130,8 @@ pub fn draw_endless_over(assets: &Assets, score: u32, best: u32, new_best: bool,
         for i in 0..10 {
             let a = i as f32 * TAU / 10.0 + t * 0.6;
             let reach = 150.0 + (t * 3.0 + i as f32).sin() * 20.0;
-            let at = ribbon_at + vec2(a.cos() * reach, a.sin() * reach * 0.45) * burst;
-            assets.items.draw_ex("star_0", at, 1.0, 0.8 * burst, a * 2.0, fade(WHITE, burst));
+            let at = ribbon_at + vec2(a.cos() * reach, a.sin() * reach * 0.28) * burst;
+            assets.items.draw_ex("star_0", at, 1.0, 0.7 * burst, a * 2.0, fade(WHITE, burst));
         }
         ribbon("New best!", ribbon_at, 34.0, burst, Ribbon::Gold);
     }
@@ -1152,7 +1153,7 @@ enum Legend {
 pub fn draw_paused(assets: &Assets, time: f32, touch: bool) {
     let t = ambient_time();
     let dim = appear(time, 0.0, 0.2);
-    draw_rectangle(0.0, 0.0, VIEW_W, VIEW_H, Color::new(0.03, 0.05, 0.08, 0.6 * dim));
+    draw_rectangle(-400.0, -400.0, VIEW_W + 800.0, VIEW_H + 800.0, Color::new(0.03, 0.05, 0.08, 0.6 * dim));
     let bounce = "Hold as you land, let go as the ring glows blue: bounce higher! Too high and branches snap.";
     let rows = if touch {
         [

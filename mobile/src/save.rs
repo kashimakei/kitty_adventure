@@ -60,6 +60,8 @@ pub struct EndlessRecord {
 pub struct SaveData {
     pub version: u32,
     pub seen_intro: bool,
+    /// The ending story, played once Luna's home.
+    pub seen_ending: bool,
     /// Playtesting: every level open, though none counts as cleared.
     pub unlock_all: bool,
     /// By level key ("mossy-2").
@@ -86,6 +88,7 @@ impl SaveData {
     /// to the newer one's.
     pub fn merge(&mut self, other: &SaveData) {
         self.seen_intro |= other.seen_intro;
+        self.seen_ending |= other.seen_ending;
         self.unlock_all |= other.unlock_all;
         for (key, theirs) in &other.levels {
             let mine = self.levels.entry(key.clone()).or_default();
@@ -192,6 +195,7 @@ pub fn save_high_score(score: u32) {
 #[cfg(not(target_arch = "wasm32"))]
 mod store {
     use std::fs;
+    use std::io::Write;
     use std::path::PathBuf;
 
     use macroquad::logging::warn;
@@ -214,11 +218,12 @@ mod store {
         fn save_text(&self, text: &str) {
             let Some(dir) = &self.0 else { return };
             let path = dir.join(FILE_NAME);
-            // Write a temporary file and rename it over the old one, so a crash mid-write can't
-            // leave half a save behind
+            // Write a temporary file, make sure it's on the disk, and rename it over the old one,
+            // so neither a crash mid-write nor losing power just after can leave half a save
             let temp = path.with_extension("json.tmp");
             let written = fs::create_dir_all(dir)
-                .and_then(|_| fs::write(&temp, text))
+                .and_then(|_| fs::File::create(&temp))
+                .and_then(|mut file| file.write_all(text.as_bytes()).and_then(|_| file.sync_all()))
                 .and_then(|_| fs::rename(&temp, &path));
             if let Err(error) = written {
                 warn!("couldn't save progress to {}: {}", path.display(), error);
@@ -406,7 +411,7 @@ mod tests {
     #[test]
     fn progress_round_trips_and_keeps_what_it_doesnt_know() {
         let (store, dir) = folder("round-trip");
-        let mut data = SaveData { seen_intro: true, ..SaveData::default() };
+        let mut data = SaveData { seen_intro: true, seen_ending: true, ..SaveData::default() };
         data.levels.insert("mossy-1".into(), cleared(1500, 41.5, Stars { top: true, no_bumps: true, quick: false }, 1));
         data.endless.best_score = 9000;
         data.extra.insert("future".into(), Value::from("kept"));

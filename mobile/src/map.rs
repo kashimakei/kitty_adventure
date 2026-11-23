@@ -16,7 +16,7 @@ use crate::save::SaveData;
 use crate::sprites::Assets;
 use crate::story::paint::{self, Align, CREAM, GOLD_TEXT, INK};
 use crate::story::{self, thousands, Ribbon};
-use crate::ui::{self, Style};
+use crate::ui::{self, Style, BACK};
 
 /// The map's height: the endless climb's sky, five regions, and the ground at the foot.
 pub const TOP_H: f32 = 600.0;
@@ -32,7 +32,6 @@ const ZIGZAG: [[f32; 3]; 2] = [[170.0, 420.0, 260.0], [430.0, 180.0, 340.0]];
 const ENDLESS_AT: Vec2 = Vec2::from_array([300.0, 330.0]);
 /// The bar across the top of the screen, and its back button.
 const BAR: Rect = Rect { x: 0.0, y: 0.0, w: VIEW_W, h: 116.0 };
-const BACK: Rect = Rect { x: 14.0, y: 20.0, w: 80.0, h: 80.0 };
 /// The wood's name in the bar (tapped seven times in a playtest build, every level opens).
 pub const TITLE: Rect = Rect { x: 150.0, y: 20.0, w: 300.0, h: 80.0 };
 /// A stone's card, sliding up from the bottom.
@@ -239,14 +238,17 @@ impl MapState {
         }
         // The card: Play (or Enter, if it was already open), its close button, or a tap
         // anywhere else to close it
-        if let Some((stop, _)) = self.card {
-            if ui::pressed(input, play_button(0.0), card_was_open) {
+        if let Some((stop, open_for)) = self.card {
+            // Play only once the card has slid into place (so a quick double tap on a stone
+            // can't press it unseen), and Enter only once it was open before this frame
+            let settled = open_for >= CARD_IN;
+            if settled && ui::pressed(input, play_button(0.0), card_was_open) {
                 return Some(match stop {
                     Stop::Level(id) => MapAction::Play(id),
                     Stop::Endless => MapAction::PlayEndless,
                 });
             }
-            if input.tapped(close_button(0.0)) {
+            if input.tapped(close_button(card_slide(open_for))) {
                 self.card = None;
                 return None;
             }
@@ -277,7 +279,7 @@ impl MapState {
             self.vel = -fling;
         }
         if input.wheel != 0.0 {
-            self.scroll -= input.wheel * WHEEL_STEP;
+            self.scroll -= wheel_distance(input.wheel);
             self.target = None;
         }
         self.glide(dt);
@@ -329,12 +331,29 @@ impl MapState {
 /// Kitty sits just to the left of her stone.
 const KITTY_SEAT: Vec2 = Vec2::from_array([-64.0, 14.0]);
 
+/// How far a turn of the mouse wheel scrolls. Browsers report pixels, Windows 120 a notch, and
+/// the rest a notch (or a fraction of one, on a trackpad) at a time.
+fn wheel_distance(wheel: f32) -> f32 {
+    if cfg!(target_arch = "wasm32") {
+        wheel * 0.8
+    } else if wheel.abs() >= 30.0 {
+        wheel / 120.0 * WHEEL_STEP
+    } else {
+        wheel * WHEEL_STEP
+    }
+}
+
 fn locked_message(stop: Stop) -> String {
     match stop {
         Stop::Level(id) if id.0 > 0 => format!("Clear {} first!", LevelId(id.0 - 1).def().title),
         Stop::Level(_) => String::new(),
         Stop::Endless => "Bring Luna home first!".to_string(),
     }
+}
+
+/// How far below its place the card still is, `open_for` seconds after it began sliding in.
+fn card_slide(open_for: f32) -> f32 {
+    (1.0 - paint::appear(open_for, 0.0, CARD_IN)) * (CARD.h + 40.0)
 }
 
 fn play_button(slide: f32) -> Rect {
@@ -360,6 +379,9 @@ pub fn draw(assets: &Assets, state: &MapState, save: &SaveData, input: &MenuInpu
     }
     draw_ground(scroll);
     draw_path(save, scroll);
+    for region in REGION_IDS {
+        draw_region_name(region, scroll, save);
+    }
     for stop in Stop::all() {
         draw_stone(assets, stop, save, scroll, time, state.focus == stop && state.walk.is_none());
     }
@@ -371,16 +393,17 @@ pub fn draw(assets: &Assets, state: &MapState, save: &SaveData, input: &MenuInpu
     if let Some((message, left)) = &state.toast {
         let alpha = (left / 0.3).min(1.0);
         let w = paint::measure(message, 28.0) + 60.0;
-        let r = Rect::new(300.0 - w / 2.0, 610.0, w, 64.0);
+        let r = Rect::new(300.0 - w / 2.0, BAR.bottom() + 16.0, w, 64.0);
         paint::rounded_rect(r, 24.0, paint::fade(INK, 0.85 * alpha), paint::fade(INK, 0.85 * alpha));
         paint::text(message, 300.0, r.y + 42.0, 28.0, paint::fade(CREAM, alpha), Align::Center);
     }
 }
 
-/// On screen: map rectangle `r` moved up by the scroll, if any of it shows.
+/// On screen: map rectangle `r` moved up by the scroll, if any of it shows (in the letterbox of a
+/// tall screen too).
 fn visible(r: Rect, scroll: f32) -> Option<Rect> {
     let on = Rect::new(r.x, r.y - scroll, r.w, r.h);
-    (on.bottom() >= 0.0 && on.y <= VIEW_H).then_some(on)
+    (on.bottom() >= -200.0 && on.y <= VIEW_H + 200.0).then_some(on)
 }
 
 /// The sky above the regions, where the endless climb waits among the clouds.
@@ -454,6 +477,11 @@ fn draw_region(assets: &Assets, region: RegionId, scroll: f32, save: &SaveData, 
             }
         }
         RegionId::TallestTree => {
+            // A bank of cloud where it meets the sky
+            for i in 0..16 {
+                let radius = 34.0 + paint::hash(i + 300) * 16.0;
+                draw_circle(-30.0 + i as f32 * 44.0, r.y + 6.0 + paint::hash(i + 310) * 10.0, radius, paint::rgb(0.86, 0.92, 1.0));
+            }
             // The great trunk itself, rising through the clouds
             let trunk = Rect::new(220.0, r.y, 160.0, r.h);
             draw_rectangle(trunk.x, trunk.y, trunk.w, trunk.h, wood.trunk);
@@ -476,18 +504,27 @@ fn draw_region(assets: &Assets, region: RegionId, scroll: f32, save: &SaveData, 
             draw_circle(i as f32 * 46.0, r.bottom(), 30.0 + paint::hash(i + region.index() * 20) * 12.0, below);
         }
     }
-    story::ribbon(region.info().name, vec2(300.0, r.y + 64.0), 30.0, 1.0, Ribbon::Leaf);
-    // Clues found so far, beside the name
+    if !reached(save, region) {
+        paint::gradient_rect(wide(r), Color::new(0.90, 0.93, 1.0, 0.75), Color::new(0.90, 0.93, 1.0, 0.55));
+    }
+}
+
+/// Whether Kitty has got as far as `region`.
+fn reached(save: &SaveData, region: RegionId) -> bool {
+    region.levels().next().is_some_and(|first| flow::unlocked(save, first))
+}
+
+/// A region's name on a ribbon at the top of its band, with the clues found so far either side.
+fn draw_region_name(region: RegionId, scroll: f32, save: &SaveData) {
+    let Some(r) = visible(band(region), scroll) else { return };
+    let alpha = if reached(save, region) { 1.0 } else { 0.7 };
+    story::ribbon(region.info().name, vec2(300.0, r.y + 50.0), 30.0, alpha, Ribbon::Leaf);
     let found = flow::clues_found(save, region);
     for k in 0..2 {
-        let at = vec2(84.0 + 432.0 * k as f32, r.y + 64.0);
-        draw_circle(at.x, at.y, 22.0, paint::fade(INK, 0.5));
-        draw_circle(at.x, at.y, 19.0, if k < found { GOLD_TEXT } else { paint::fade(CREAM, 0.7) });
-        paint::text(if k < found { "!" } else { "?" }, at.x, at.y + 10.0, 28.0, INK, Align::Center);
-    }
-    let reached = region.levels().next().is_some_and(|first| flow::unlocked(save, first));
-    if !reached {
-        paint::gradient_rect(wide(r), Color::new(0.90, 0.93, 1.0, 0.75), Color::new(0.90, 0.93, 1.0, 0.55));
+        let at = vec2(84.0 + 432.0 * k as f32, r.y + 50.0);
+        draw_circle(at.x, at.y, 22.0, paint::fade(INK, 0.5 * alpha));
+        draw_circle(at.x, at.y, 19.0, paint::fade(if k < found { GOLD_TEXT } else { paint::fade(CREAM, 0.7) }, alpha));
+        paint::text(if k < found { "!" } else { "?" }, at.x, at.y + 10.0, 28.0, paint::fade(INK, alpha), Align::Center);
     }
 }
 
@@ -564,7 +601,13 @@ fn draw_stone(assets: &Assets, stop: Stop, save: &SaveData, scroll: f32, t: f32,
     }
     match stop {
         Stop::Endless => {
-            paint::text(if open { "∞" } else { "?" }, c.x, c.y + 16.0, 48.0, if open { INK } else { paint::fade(INK, 0.5) }, Align::Center);
+            if open {
+                for side in [-1.0, 1.0] {
+                    draw_circle_lines(c.x + side * 10.0, c.y - 2.0, 10.0, 5.0, INK);
+                }
+            } else {
+                paint::text("?", c.x, c.y + 16.0, 48.0, paint::fade(INK, 0.5), Align::Center);
+            }
         }
         Stop::Level(id) => {
             let def = id.def();
@@ -614,13 +657,10 @@ fn magnifier(at: Vec2, open: bool) {
 
 /// The bar over the top of the map: back, the wood's name, and the stars won.
 fn draw_bar(save: &SaveData, input: &MenuInput) {
-    paint::glass(Rect::new(-20.0, -20.0, VIEW_W + 40.0, BAR.h + 20.0), 24.0);
-    let held = input.pointing_at(BACK);
-    draw_circle(BACK.center().x, BACK.center().y, 34.0, paint::fade(CREAM, if held { 0.45 } else { 0.25 }));
-    let (cx, cy) = (BACK.center().x, BACK.center().y);
-    draw_line(cx + 12.0, cy, cx - 12.0, cy, 6.0, CREAM);
-    draw_line(cx - 14.0, cy + 2.0, cx, cy - 14.0, 6.0, CREAM);
-    draw_line(cx - 14.0, cy - 2.0, cx, cy + 14.0, 6.0, CREAM);
+    let bar = Rect::new(-320.0, -240.0, VIEW_W + 640.0, BAR.h + 240.0);
+    paint::rounded_rect(bar, 24.0, paint::rgb(0.08, 0.11, 0.09), paint::rgb(0.06, 0.09, 0.08));
+    paint::glass(bar, 24.0);
+    ui::draw_back(input, 1.0);
     paint::outlined("Whisker Wood", 300.0, 74.0, 38.0, CREAM, INK, Align::Center);
     let (won, total) = flow::total_stars(save);
     ui::star(vec2(482.0, 60.0), 18.0, GOLD_TEXT, INK);
@@ -630,8 +670,10 @@ fn draw_bar(save: &SaveData, input: &MenuInput) {
 /// The open stone's card, sliding up from the bottom.
 fn draw_card(assets: &Assets, state: &MapState, save: &SaveData, input: &MenuInput) {
     let Some((stop, open_for)) = state.card else { return };
-    let slide = (1.0 - paint::appear(open_for, 0.0, CARD_IN)) * (CARD.h + 40.0);
+    let slide = card_slide(open_for);
     let r = Rect::new(CARD.x, CARD.y + slide, CARD.w, CARD.h);
+    // Solid behind, so the stones and ribbons don't show through the text
+    paint::rounded_rect(r, 30.0, paint::rgb(0.10, 0.13, 0.11), paint::rgb(0.07, 0.09, 0.08));
     paint::panel(r, 30.0, 1.0);
     let close = close_button(slide);
     let (cx, cy) = (close.center().x, close.center().y);
@@ -681,8 +723,8 @@ fn draw_card(assets: &Assets, state: &MapState, save: &SaveData, input: &MenuInp
         Stop::Endless => {
             paint::text("BONUS", 300.0, r.y + 52.0, 22.0, GOLD_TEXT, Align::Center);
             paint::outlined("Endless Climb", 300.0, r.y + 106.0, 46.0, CREAM, INK, Align::Center);
-            paint::text("How high can Kitty climb? Every critter, ever wilder,", 300.0, r.y + 170.0, 22.0, CREAM, Align::Center);
-            paint::text("with one set of hearts.", 300.0, r.y + 200.0, 22.0, CREAM, Align::Center);
+            paint::text("How high can Kitty climb? The critters get", 300.0, r.y + 170.0, 22.0, CREAM, Align::Center);
+            paint::text("wilder each climb, and the run ends when her hearts do.", 300.0, r.y + 200.0, 22.0, CREAM, Align::Center);
             paint::text(&format!("Best {}", thousands(save.endless.best_score)), 300.0, r.y + 262.0, 30.0, GOLD_TEXT, Align::Center);
             if save.endless.best_climb > 0 {
                 paint::text(&format!("Furthest: climb {}", save.endless.best_climb), 300.0, r.y + 300.0, 24.0, CREAM, Align::Center);
@@ -767,6 +809,10 @@ mod tests {
         assert!(map.card.is_some());
         assert_eq!(map.update(&key(Nav::Up), &save, 0.016), None, "the next level is locked");
         assert_eq!(map.focus, Stop::Level(LevelId(0)));
+        assert_eq!(map.update(&key(Nav::Activate), &save, 0.016), None, "not until the card has slid in");
+        for _ in 0..20 {
+            map.update(&MenuInput::default(), &save, 0.016);
+        }
         assert_eq!(map.update(&key(Nav::Activate), &save, 0.016), Some(MapAction::Play(LevelId(0))));
         map.update(&key(Nav::Back), &save, 0.016);
         assert!(map.card.is_none());

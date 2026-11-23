@@ -67,8 +67,8 @@ pub fn window_conf() -> Conf {
 #[derive(Clone, Copy)]
 enum Run {
     Level(LevelId),
-    /// The endless climb: `level` 1..=5 of its ramp on `lap` (from 1, so every critter's out), the
-    /// score so far and which climb of the run this is.
+    /// The endless climb: `level` 1..=5 of its ramp on `lap` (from 1, so dogs, crows and eagles
+    /// come from the first climb), the score so far and which climb of the run this is.
     Endless { level: usize, lap: usize, score: u32, climb: u32 },
 }
 
@@ -159,9 +159,16 @@ impl Game {
         self.go(Screen::Playing);
     }
 
+    /// Back to the map; but the first time Luna's home, the ending story first (whichever way
+    /// the player left her level), and then Kitty's hop up to the endless climb.
     fn go_to_map(&mut self) {
         self.world = None;
         self.run = None;
+        if self.save.cleared(LevelId::last().def().key) && !self.save.seen_ending {
+            self.walk = Some((Stop::Level(LevelId::last()), Stop::Endless));
+            self.go(Screen::Story { pages: story::ending_pages(), page: 0, then: AfterStory::EndlessOpened });
+            return;
+        }
         self.map.enter(&self.save, self.walk.take());
         self.go(Screen::Map);
     }
@@ -243,12 +250,17 @@ impl Game {
                 let tally = flow::tally(flow::par(id), &result, 0);
                 let outcome = flow::record_clear(&mut self.save, id, &result, tally.level_total);
                 self.persist();
-                self.walk = outcome.unlocked.map(|next| (Stop::Level(id), Stop::Level(next)));
+                // A re-clear opens nothing, and mustn't forget the hop a first clear set up
+                if let Some(next) = outcome.unlocked {
+                    self.walk = Some((Stop::Level(id), Stop::Level(next)));
+                }
                 self.go(Screen::LevelClear { tally, outcome: Some(outcome), focus: 1 });
             }
             Some(Run::Endless { level, lap, score, climb }) => {
                 let tally = flow::tally(RESCUE_PAR_SECONDS, &result, score);
                 self.run = Some(Run::Endless { level, lap, score: tally.score, climb });
+                // Its points are in the run's score now; the next climb gets a World of its own
+                self.world = None;
                 self.go(Screen::LevelClear { tally, outcome: None, focus: 0 });
             }
             None => self.go_to_map(),
@@ -266,14 +278,11 @@ impl Game {
     }
 
     /// Move on from a level-clear card.
-    fn carry_on(&mut self, outcome: Option<ClearOutcome>) {
+    fn carry_on(&mut self) {
         match self.run {
             Some(Run::Level(id)) => {
                 if id.def().clue().is_some() {
                     self.go(Screen::Clue { id });
-                } else if outcome.is_some_and(|o| o.endless_unlocked) {
-                    self.walk = Some((Stop::Level(id), Stop::Endless));
-                    self.go(Screen::Story { pages: story::ending_pages(), page: 0, then: AfterStory::EndlessOpened });
                 } else {
                     self.go_to_map();
                 }
@@ -380,10 +389,11 @@ pub async fn run() {
                     *page = if skip { pages.len() } else { *page + 1 };
                     game.screen_time = 0.0;
                     if *page >= pages.len() {
-                        if matches!(then, AfterStory::Map) {
-                            game.save.seen_intro = true;
-                            game.persist();
+                        match then {
+                            AfterStory::Map => game.save.seen_intro = true,
+                            AfterStory::EndlessOpened => game.save.seen_ending = true,
                         }
+                        game.persist();
                         game.go_to_map();
                     }
                 }
@@ -404,9 +414,15 @@ pub async fn run() {
                 set_camera(&view.screen_camera());
                 let card = game.intro_card();
                 story::draw_level_intro(&assets, &card, game.screen_time, input.is_touch());
-                if back || controls.pause {
-                    game.go_to_map();
-                } else if controls.any_tap && game.screen_time > story::level_intro_wait(card.basics) {
+                ui::draw_back(&menu, paint::appear(game.screen_time, 0.2, 0.3));
+                let on_back = menu.held.is_some_and(|p| ui::BACK.contains(p));
+                if back || menu.tapped(ui::BACK) {
+                    match game.run {
+                        // Leaving partway through a run still counts the climbs made
+                        Some(Run::Endless { climb, .. }) if climb > 1 => game.end_endless(),
+                        _ => game.go_to_map(),
+                    }
+                } else if controls.any_tap && !on_back && game.screen_time > story::level_intro_wait(card.basics) {
                     accumulator = 0.0;
                     game.go(Screen::Playing);
                 }
@@ -445,7 +461,7 @@ pub async fn run() {
                 hud::draw(&assets, &hud, game.screen_time);
                 input.draw();
                 let world = game.world.as_ref().unwrap();
-                if controls.pause || controls.back || was_away {
+                if ((controls.pause || controls.back) && !world.reached) || was_away {
                     game.go(Screen::Paused { focus: 0 });
                 } else if outcome == Outcome::OutOfHearts {
                     match game.run {
@@ -473,7 +489,11 @@ pub async fn run() {
                 let ready = game.screen_time > 0.3;
                 let pressed = if ready { buttons_pressed(&menu, &rects, focus) } else { None };
                 draw_buttons(&menu, &buttons, *focus, keyed, paint::appear(game.screen_time, 0.0, 0.2));
-                if ready && (controls.pause || controls.back || menu.nav == Some(Nav::Back)) || pressed == Some(0) {
+                let resume = ready && (controls.pause || controls.back || menu.nav == Some(Nav::Back));
+                if world.reached && (resume || pressed.is_some()) {
+                    // Put away during the goal's moment: the level's done, whatever's pressed
+                    game.finish_level();
+                } else if resume || pressed == Some(0) {
                     accumulator = 0.0;
                     game.go(Screen::Playing);
                 } else if pressed == Some(1) && endless {
@@ -557,12 +577,12 @@ pub async fn run() {
                 draw_buttons(&menu, &buttons, *focus, keyed, paint::appear(game.screen_time, 0.8, 0.3));
                 let continue_index = rects.len() - 1;
                 if pressed == Some(continue_index) {
-                    game.carry_on(outcome);
+                    game.carry_on();
                 } else if pressed == Some(0) {
                     accumulator = 0.0;
                     game.retry();
                 } else if ready && back {
-                    if endless { game.end_endless() } else { game.go_to_map() }
+                    if endless { game.end_endless() } else { game.carry_on() }
                 } else if menu.tap.is_some() && game.screen_time < story::CLEAR_COUNTED {
                     // A tap off the buttons hurries the count-up along
                     game.screen_time = story::CLEAR_COUNTED;

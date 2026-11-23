@@ -329,6 +329,7 @@ impl Input {
                     self.touch.release_all();
                     self.keys.release_all();
                     self.menu.release_all();
+                    self.menu_keys.release_all();
                     away = true;
                 }
             }
@@ -360,6 +361,7 @@ impl Input {
         self.touch.release_all();
         self.keys.release_all();
         self.menu.release_all();
+        self.menu_keys.release_all();
     }
 
     /// The screen changed: fingers and the jump key already down do nothing until let go.
