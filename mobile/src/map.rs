@@ -536,8 +536,8 @@ fn draw_region_name(assets: &Assets, region: RegionId, scroll: f32, save: &SaveD
     for (k, object) in region.clue_objects().into_iter().enumerate() {
         let at = vec2(84.0 + 432.0 * k as f32, r.y + 50.0);
         draw_circle(at.x, at.y, 24.0, paint::fade(INK, 0.5 * alpha));
-        draw_circle(at.x, at.y, 21.0, paint::fade(if k < found { CREAM } else { paint::fade(CREAM, 0.7) }, alpha));
-        if k < found {
+        draw_circle(at.x, at.y, 21.0, paint::fade(if found[k] { CREAM } else { paint::fade(CREAM, 0.7) }, alpha));
+        if found[k] {
             story::clue_icon(assets, object, at, 40.0, alpha);
         } else {
             paint::text("?", at.x, at.y + 10.0, 28.0, paint::fade(INK, alpha), Align::Center);

@@ -600,9 +600,9 @@ pub enum Speaker {
 #[derive(Clone, Copy)]
 pub struct ClueTrack {
     pub friend: Friend,
-    /// The region's two clues, and how many are found already.
+    /// The region's two clues, and which are found already.
     pub objects: [ClueObject; 2],
-    pub found: usize,
+    pub found: [bool; 2],
     /// This level's place in the region, 1..=3.
     pub stage: usize,
 }
@@ -710,7 +710,7 @@ pub(crate) fn clue_track(assets: &Assets, track: &ClueTrack, centre_y: f32, t: f
     let r = Rect::new(300.0 - slot * 1.5 - 20.0, centre_y - 48.0, slot * 3.0 + 40.0, 100.0);
     panel(r, 26.0, alpha);
     let name = track.friend.name();
-    let label = if track.stage >= 3 { format!("{name} is up there!") } else { format!("Clues to {name}: {} of 2", track.found) };
+    let label = if track.stage >= 3 { format!("{name} is up there!") } else { format!("Clues to {name}: {} of 2", track.found.iter().filter(|&&f| f).count()) };
     shadowed(&label, 300.0, r.y - 14.0, 24.0, fade(CREAM, alpha), Align::Center);
     for i in 0..3 {
         let centre = vec2(r.x + 20.0 + slot * (i as f32 + 0.5), r.center().y);
@@ -719,7 +719,7 @@ pub(crate) fn clue_track(assets: &Assets, track: &ClueTrack, centre_y: f32, t: f
             draw_circle(centre.x, centre.y, 40.0, fade(GOLD_TEXT, (0.2 + glow * 0.2) * alpha));
             draw_circle_lines(centre.x, centre.y, 40.0, 3.0, fade(GOLD_TEXT, 0.85 * alpha));
         }
-        if i < 2 && i < track.found {
+        if i < 2 && track.found[i] {
             clue_icon(assets, track.objects[i], centre, 64.0, alpha);
         } else if i < 2 {
             draw_circle(centre.x, centre.y, 26.0, fade(INK, 0.5 * alpha));

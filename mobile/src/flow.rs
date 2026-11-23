@@ -18,9 +18,11 @@ pub fn newest(save: &SaveData) -> LevelId {
     LevelId::all().find(|&id| unlocked(save, id) && !save.cleared(id.def().key)).unwrap_or(LevelId::last())
 }
 
-/// Clues found in `region` (cleared clue levels).
-pub fn clues_found(save: &SaveData, region: RegionId) -> usize {
-    region.levels().filter(|id| matches!(id.def().goal, Goal::Clue(_)) && save.cleared(id.def().key)).count()
+/// Which of `region`'s two clues are found (their levels cleared), in the order of its levels.
+/// Playtest builds can open levels out of order, so the second can be found before the first.
+pub fn clues_found(save: &SaveData, region: RegionId) -> [bool; 2] {
+    let mut found = region.levels().filter(|id| matches!(id.def().goal, Goal::Clue(_))).map(|id| save.cleared(id.def().key));
+    [found.next().unwrap_or(false), found.next().unwrap_or(false)]
 }
 
 /// Whether `friend` is safe home (their region's last level cleared).
@@ -147,7 +149,7 @@ mod tests {
         assert!(outcome.first_clear && !outcome.new_best);
         assert!(unlocked(&save, LevelId(1)) && !unlocked(&save, LevelId(2)), "never two ahead");
         assert_eq!(newest(&save), LevelId(1));
-        assert_eq!(clues_found(&save, RegionId::MossyHollow), 1);
+        assert_eq!(clues_found(&save, RegionId::MossyHollow), [true, false]);
         // Clearing it again opens nothing new
         let again = record_clear(&mut save, LevelId(0), &result(60.0, 2), 900);
         assert_eq!(again.unlocked, None);
@@ -187,7 +189,7 @@ mod tests {
         assert!(last.endless_unlocked && last.unlocked.is_none() && last.rescued == Some(Friend::Luna));
         assert!(!record_clear(&mut save, LevelId::last(), &result(100.0, 0), 1000).endless_unlocked, "only the first time");
         for region in REGION_IDS {
-            assert_eq!(clues_found(&save, region), 2);
+            assert_eq!(clues_found(&save, region), [true, true]);
             assert!(rescued(&save, region.info().friend));
         }
         assert_eq!(newest(&save), LevelId::last());
@@ -200,6 +202,14 @@ mod tests {
         assert!(endless_unlocked(&save));
         assert_eq!(newest(&save), LevelId(0));
         assert_eq!(total_stars(&save).0, 0);
+    }
+
+    #[test]
+    fn clues_found_out_of_order_are_the_ones_found() {
+        let mut save = SaveData { unlock_all: true, ..SaveData::default() };
+        record_clear(&mut save, LevelId(1), &result(60.0, 0), 900);
+        assert_eq!(clues_found(&save, RegionId::MossyHollow), [false, true], "the second clue, not the first");
+        assert_eq!(clues_found(&save, RegionId::WhisperingPines), [false, false]);
     }
 
     #[test]
