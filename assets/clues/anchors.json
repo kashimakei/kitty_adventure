@@ -1,0 +1,78 @@
+{
+  "scale": 0.24213075060532688,
+  "animations": {
+    "carrot": [
+      "carrot_0.png"
+    ],
+    "fur": [
+      "fur_0.png"
+    ],
+    "quill": [
+      "quill_0.png"
+    ],
+    "berry": [
+      "berry_0.png"
+    ],
+    "seeds": [
+      "seeds_0.png"
+    ],
+    "pouch": [
+      "pouch_0.png"
+    ],
+    "feather": [
+      "feather_0.png"
+    ],
+    "crust": [
+      "crust_0.png"
+    ],
+    "bell": [
+      "bell_0.png"
+    ],
+    "ribbon": [
+      "ribbon_0.png"
+    ]
+  },
+  "anchors": {
+    "carrot_0.png": [
+      46,
+      50
+    ],
+    "fur_0.png": [
+      44,
+      38
+    ],
+    "quill_0.png": [
+      24,
+      32
+    ],
+    "berry_0.png": [
+      30,
+      32
+    ],
+    "seeds_0.png": [
+      44,
+      26
+    ],
+    "pouch_0.png": [
+      37,
+      44
+    ],
+    "feather_0.png": [
+      33,
+      43
+    ],
+    "crust_0.png": [
+      39,
+      35
+    ],
+    "bell_0.png": [
+      36,
+      37
+    ],
+    "ribbon_0.png": [
+      41,
+      38
+    ]
+  },
+  "hits": {}
+}

@@ -600,7 +600,8 @@ pub enum Speaker {
 #[derive(Clone, Copy)]
 pub struct ClueTrack {
     pub friend: Friend,
-    /// Clues found in the region already.
+    /// The region's two clues, and how many are found already.
+    pub objects: [ClueObject; 2],
     pub found: usize,
     /// This level's place in the region, 1..=3.
     pub stage: usize,
@@ -718,11 +719,12 @@ pub(crate) fn clue_track(assets: &Assets, track: &ClueTrack, centre_y: f32, t: f
             draw_circle(centre.x, centre.y, 40.0, fade(GOLD_TEXT, (0.2 + glow * 0.2) * alpha));
             draw_circle_lines(centre.x, centre.y, 40.0, 3.0, fade(GOLD_TEXT, 0.85 * alpha));
         }
-        if i < 2 {
-            let found = i < track.found;
+        if i < 2 && i < track.found {
+            clue_icon(assets, track.objects[i], centre, 64.0, alpha);
+        } else if i < 2 {
             draw_circle(centre.x, centre.y, 26.0, fade(INK, 0.5 * alpha));
-            draw_circle(centre.x, centre.y, 23.0, fade(if found { GOLD_TEXT } else { CREAM }, if found { alpha } else { 0.4 * alpha }));
-            text(if found { "!" } else { "?" }, centre.x, centre.y + 12.0, 34.0, fade(INK, alpha), Align::Center);
+            draw_circle(centre.x, centre.y, 23.0, fade(CREAM, 0.4 * alpha));
+            text("?", centre.x, centre.y + 12.0, 34.0, fade(INK, alpha), Align::Center);
         } else {
             let tint = if track.stage >= 3 { fade(WHITE, alpha) } else { fade(Color::new(0.62, 0.66, 0.66, 0.6), alpha) };
             fit_sprite_centred(&assets.friends, &track.friend.help_frame(), centre, 64.0, 1.0, tint);

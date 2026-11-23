@@ -193,7 +193,7 @@ impl Game {
                     watch_tip: def.watch_tip,
                     is_new: def.introduces == Some(def.watch_out),
                     basics: id.0 == 0,
-                    track: Some(ClueTrack { friend: def.friend(), found: flow::clues_found(&self.save, def.region), stage: def.stage }),
+                    track: Some(clue_track(&self.save, id)),
             };
         }
         let (level, climb) = match self.run {
@@ -310,6 +310,12 @@ impl Game {
             self.map.say("Every level is open!");
         }
     }
+}
+
+/// Level `id`'s region's clues so far, for its intro and clue cards.
+fn clue_track(save: &SaveData, id: LevelId) -> ClueTrack {
+    let def = id.def();
+    ClueTrack { friend: def.friend(), objects: def.region.clue_objects(), found: flow::clues_found(save, def.region), stage: def.stage }
 }
 
 /// Which button the keyboard's focus moves to, or the one tapped, of `buttons`.
@@ -592,7 +598,7 @@ pub async fn run() {
                 let id = *id;
                 set_camera(&view.screen_camera());
                 let def = id.def();
-                let track = ClueTrack { friend: def.friend(), found: flow::clues_found(&game.save, def.region), stage: def.stage };
+                let track = clue_track(&game.save, id);
                 if let Some(clue) = def.clue() {
                     story::draw_clue_card(&assets, def.region.info(), def.title, clue, track, game.screen_time);
                 }

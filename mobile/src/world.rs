@@ -18,8 +18,7 @@ use crate::look::{self, Look};
 use crate::rng::Rng;
 use crate::sprites::Assets;
 use crate::campaign::ClueObject;
-use crate::story::paint;
-use crate::story::Friend;
+use crate::story::{self, paint, Friend};
 use crate::tree::{self, Tree};
 
 /// What happened during a step that the game flow cares about.
@@ -446,7 +445,7 @@ impl World {
                 let glint = (self.time * 3.0).sin() * 0.5 + 0.5;
                 let frame = format!("{}_0", object.sprite());
                 if assets.clues.has(&frame) {
-                    assets.clues.draw(&frame, at, 1.0, paint::fade(WHITE, alpha));
+                    story::fit_sprite_centred(&assets.clues, &frame, at, CLUE_SIZE, 1.0, paint::fade(WHITE, alpha));
                 } else {
                     // Until there's art for it: a bubble with a glimpse of the friend and a question mark
                     draw_circle(at.x, at.y, 27.0, paint::fade(paint::INK, 0.5 * alpha));
@@ -485,6 +484,8 @@ impl World {
 /// clue takes to float up to Kitty.
 const GOAL_PAUSE: f32 = 3.0;
 const CLUE_FLOAT_TIME: f32 = 0.8;
+/// A clue on the branch, this big across whatever its shape.
+const CLUE_SIZE: f32 = 64.0;
 
 /// A level's plan and settled limbs, and the random stream that goes on to decorate it. The game
 /// and the climb tests both build levels through here.

@@ -38,6 +38,12 @@ impl RegionId {
     pub fn levels(self) -> impl Iterator<Item = LevelId> {
         LevelId::all().filter(move |id| id.def().region == self)
     }
+
+    /// The two things its friend left behind, in the order they're found.
+    pub fn clue_objects(self) -> [ClueObject; 2] {
+        let mut objects = self.levels().filter_map(|id| id.def().clue().map(|clue| clue.object));
+        [objects.next().unwrap(), objects.next().unwrap()]
+    }
 }
 
 /// A critter who lives in a region and saw where its friend went.
@@ -729,6 +735,22 @@ mod tests {
             let hearts = plan.items.iter().filter(|i| i.kind == level::ItemKind::Heart).count();
             assert_eq!((plan.squirrel_spots.len(), plan.snake_spots.len(), hearts),
                        (spec.difficulty.squirrels, spec.difficulty.snakes, spec.hearts), "{key}");
+        }
+    }
+
+    /// Every clue has its picture in assets/clues (sliced from assets/source/clues_sheet.jpg).
+    #[test]
+    fn every_clue_has_its_picture() {
+        let manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string("../assets/clues/anchors.json").unwrap()).unwrap();
+        for def in &LEVELS {
+            if let Some(clue) = def.clue() {
+                let file = format!("{}_0.png", clue.object.sprite());
+                assert!(manifest["anchors"].get(&file).is_some(), "{}: no {file}", def.key);
+            }
+        }
+        for region in REGION_IDS {
+            assert_eq!(region.clue_objects().len(), 2);
         }
     }
 

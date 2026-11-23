@@ -380,7 +380,7 @@ pub fn draw(assets: &Assets, state: &MapState, save: &SaveData, input: &MenuInpu
     draw_ground(scroll);
     draw_path(save, scroll);
     for region in REGION_IDS {
-        draw_region_name(region, scroll, save);
+        draw_region_name(assets, region, scroll, save);
     }
     for stop in Stop::all() {
         draw_stone(assets, stop, save, scroll, time, state.focus == stop && state.walk.is_none());
@@ -515,16 +515,20 @@ fn reached(save: &SaveData, region: RegionId) -> bool {
 }
 
 /// A region's name on a ribbon at the top of its band, with the clues found so far either side.
-fn draw_region_name(region: RegionId, scroll: f32, save: &SaveData) {
+fn draw_region_name(assets: &Assets, region: RegionId, scroll: f32, save: &SaveData) {
     let Some(r) = visible(band(region), scroll) else { return };
     let alpha = if reached(save, region) { 1.0 } else { 0.7 };
     story::ribbon(region.info().name, vec2(300.0, r.y + 50.0), 30.0, alpha, Ribbon::Leaf);
     let found = flow::clues_found(save, region);
-    for k in 0..2 {
+    for (k, object) in region.clue_objects().into_iter().enumerate() {
         let at = vec2(84.0 + 432.0 * k as f32, r.y + 50.0);
-        draw_circle(at.x, at.y, 22.0, paint::fade(INK, 0.5 * alpha));
-        draw_circle(at.x, at.y, 19.0, paint::fade(if k < found { GOLD_TEXT } else { paint::fade(CREAM, 0.7) }, alpha));
-        paint::text(if k < found { "!" } else { "?" }, at.x, at.y + 10.0, 28.0, paint::fade(INK, alpha), Align::Center);
+        draw_circle(at.x, at.y, 24.0, paint::fade(INK, 0.5 * alpha));
+        draw_circle(at.x, at.y, 21.0, paint::fade(if k < found { CREAM } else { paint::fade(CREAM, 0.7) }, alpha));
+        if k < found {
+            story::clue_icon(assets, object, at, 40.0, alpha);
+        } else {
+            paint::text("?", at.x, at.y + 10.0, 28.0, paint::fade(INK, alpha), Align::Center);
+        }
     }
 }
 

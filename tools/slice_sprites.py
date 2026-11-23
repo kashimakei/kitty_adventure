@@ -225,6 +225,27 @@ CHARACTERS = {
             "luna_storm":  ("storm", (0, 1950, 1792, 2400), "center"),
         },
     },
+    "clues": {
+        "out": "assets/clues",
+        # Mint rather than grey, so the grey fur keys cleanly
+        "background": (168, 215, 199),
+        "sheets": {"clues": "assets/source/clues_sheet.jpg"},
+        "reference": ("carrot", 0),
+        "target_height": 100,
+        # One object per column, two rows; each region stops above the object's label
+        "animations": {
+            "carrot":  ("clues", (0, 60, 480, 570), "middle"),
+            "fur":     ("clues", (480, 60, 960, 570), "middle"),
+            "quill":   ("clues", (960, 60, 1440, 570), "middle"),
+            "berry":   ("clues", (1440, 60, 1920, 570), "middle"),
+            "seeds":   ("clues", (1920, 60, 2400, 570), "middle"),
+            "pouch":   ("clues", (0, 850, 480, 1310), "middle"),
+            "feather": ("clues", (480, 850, 960, 1310), "middle"),
+            "crust":   ("clues", (960, 850, 1440, 1310), "middle"),
+            "bell":    ("clues", (1440, 850, 1920, 1310), "middle"),
+            "ribbon":  ("clues", (1920, 850, 2400, 1310), "middle"),
+        },
+    },
     "items": {
         "out": "assets/items",
         "background": (185, 185, 185),
