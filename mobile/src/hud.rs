@@ -1,6 +1,6 @@
-//! The heads-up display along the top: hearts, lives, the level and score, the five friends, and a
-//! minimap of the world's width showing the view, Kitty and where her friend is waiting, plus a
-//! slim meter of how far up she has climbed. Drawn in playfield coordinates along the top, clear
+//! The heads-up display along the top: hearts, the clock, the level and score, the five friends,
+//! and a minimap of the world's width showing the view, Kitty and where her friend (or the clue
+//! to them) is waiting, plus a slim meter of how far up she has climbed. Drawn in playfield coordinates along the top, clear
 //! of the pause button (top right) and of the lower screen, where thumbs slide and hold.
 
 use macroquad::prelude::*;
@@ -9,9 +9,9 @@ use crate::consts::*;
 use crate::level::tree_positions;
 use crate::sprites::Assets;
 use crate::story::paint::*;
-use crate::story::{thousands, Friend, FRIENDS};
+use crate::story::{mmss, thousands, Friend, FRIENDS};
 
-/// Top bar: hearts, lives, level and score.
+/// Top bar: hearts, the clock, level and score.
 const BAR: Rect = Rect { x: 8.0, y: 8.0, w: 584.0, h: 52.0 };
 /// Second row: the friends, then the minimap, stopping short of the pause button (x 548..596).
 const FRIENDS_BOX: Rect = Rect { x: 8.0, y: 66.0, w: 192.0, h: 48.0 };
@@ -29,12 +29,18 @@ const KITTY_MARK: Color = Color::new(1.0, 0.60, 0.22, 1.0);
 pub struct HudState {
     pub hearts: u32,
     pub max_hearts: u32,
-    pub lives: u32,
     pub score: u32,
-    pub level: usize,
-    pub level_title: &'static str,
+    /// "MOSSY HOLLOW 2/3" or "ENDLESS · CLIMB 7", and the level's name.
+    pub label: String,
+    pub title: String,
     pub friend: Friend,
-    pub friends_rescued: usize,
+    /// Friends home already, in `FRIENDS` order.
+    pub rescued: [bool; 5],
+    /// A clue waits at the top, rather than the friend.
+    pub clue: bool,
+    /// Seconds of play so far, and the time star's limit on a campaign level.
+    pub elapsed: f32,
+    pub star_time: Option<f32>,
     /// World x of Kitty, the goal nest, and the left edge of the view.
     pub kitty_x: f32,
     pub goal_x: f32,
@@ -75,12 +81,18 @@ fn top_bar(assets: &Assets, hud: &HudState, t: f32) {
         assets.items.draw_ex("heart_0", at, 1.0, scale, 0.0, tint);
     }
 
-    // Lives
-    let x = BAR.x + 28.0 + slots as f32 * HEART_GAP;
-    assets.kitty.draw_ex("sit_0", vec2(x, BAR.bottom() - 9.0), 1.0, 0.36, 0.0, WHITE);
-    let lives = format!("x{}", hud.lives);
-    shadowed(&lives, x + 20.0, mid_y + 9.0, 24.0, CREAM, Align::Left);
-    let left_end = x + 20.0 + measure(&lives, 24.0) + 12.0;
+    // The clock, golden while the time star is still to be had
+    let x = BAR.x + 22.0 + slots as f32 * HEART_GAP;
+    let in_time = hud.star_time.is_some_and(|limit| hud.elapsed <= limit);
+    let color = if in_time { GOLD_TEXT } else { CREAM };
+    draw_circle(x, mid_y, 11.0, fade(INK, 0.7));
+    draw_circle_lines(x, mid_y, 11.0, 2.5, color);
+    let hand = hud.elapsed * std::f32::consts::TAU / 60.0 - std::f32::consts::FRAC_PI_2;
+    draw_line(x, mid_y, x + hand.cos() * 7.0, mid_y + hand.sin() * 7.0, 2.0, color);
+    draw_line(x, mid_y, x, mid_y - 5.0, 2.0, color);
+    let clock = mmss(hud.elapsed);
+    shadowed(&clock, x + 18.0, mid_y + 9.0, 24.0, color, Align::Left);
+    let left_end = x + 18.0 + measure(&clock, 24.0) + 12.0;
 
     // Score, right-aligned behind a golden fish
     let score = thousands(hud.score);
@@ -94,19 +106,19 @@ fn top_bar(assets: &Assets, hud: &HudState, t: f32) {
     let right_end = fish_x - 26.0;
     let centre = (left_end + right_end) / 2.0;
     let width = right_end - left_end;
-    let label = format!("LEVEL {}", hud.level);
-    text(&label, centre, BAR.y + 22.0, 16.0, fade(ORANGE_TEXT, 0.95), Align::Center);
-    let size = fit_size(hud.level_title, 20.0, width);
-    shadowed(hud.level_title, centre, BAR.y + 43.0, size, CREAM, Align::Center);
+    let size = fit_size(&hud.label, 16.0, width);
+    text(&hud.label, centre, BAR.y + 22.0, size, fade(ORANGE_TEXT, 0.95), Align::Center);
+    let size = fit_size(&hud.title, 20.0, width);
+    shadowed(&hud.title, centre, BAR.y + 43.0, size, CREAM, Align::Center);
 }
 
-/// The five friends: greyed until rescued, the one waiting this level ringed in gold.
+/// The five friends: greyed until rescued, the one Kitty's looking for ringed in gold.
 fn friends_row(assets: &Assets, hud: &HudState, t: f32) {
     glass(FRIENDS_BOX, 22.0);
     let slot = (FRIENDS_BOX.w - 16.0) / FRIENDS.len() as f32;
     for (i, friend) in FRIENDS.into_iter().enumerate() {
         let centre = vec2(FRIENDS_BOX.x + 8.0 + slot * (i as f32 + 0.5), FRIENDS_BOX.y + FRIENDS_BOX.h / 2.0);
-        let rescued = i < hud.friends_rescued;
+        let rescued = hud.rescued[i];
         let current = friend == hud.friend && !rescued;
         let mut feet = centre + vec2(0.0, 17.0);
         if current {
@@ -149,13 +161,17 @@ fn minimap(assets: &Assets, hud: &HudState, t: f32) {
     rounded_rect(view, 6.0, fade(CREAM, 0.16), fade(CREAM, 0.10));
     rounded_outline(view, 6.0, 2.0, fade(CREAM, 0.7));
 
-    // The friend waiting in the nest
+    // The friend waiting in the nest, or the clue
     let nest = vec2(to_map(hud.goal_x), strip.y + 15.0);
-    assets.items.draw_ex("nest_0", nest, 1.0, 0.24, 0.0, WHITE);
-    let frame = hud.friend.help_frame();
-    let size = assets.friends.get(&frame).size();
     let bob = (t * 3.0).sin() * 1.5;
-    assets.friends.draw_ex(&frame, nest - vec2(0.0, 6.0 + bob), 1.0, 18.0 / size.x.max(size.y), 0.0, WHITE);
+    if hud.clue {
+        clue_mark(nest - vec2(0.0, 4.0 + bob), 9.0);
+    } else {
+        assets.items.draw_ex("nest_0", nest, 1.0, 0.24, 0.0, WHITE);
+        let frame = hud.friend.help_frame();
+        let size = assets.friends.get(&frame).size();
+        assets.friends.draw_ex(&frame, nest - vec2(0.0, 6.0 + bob), 1.0, 18.0 / size.x.max(size.y), 0.0, WHITE);
+    }
 
     // Kitty
     let k = vec2(to_map(hud.kitty_x), ground - 6.0);
@@ -179,14 +195,25 @@ fn climb_meter(assets: &Assets, hud: &HudState, t: f32) {
         let y = track.bottom() - track.h * i as f32 / 4.0;
         draw_line(track.x + 2.0, y, track.right() - 2.0, y, 1.5, Color::new(1.0, 1.0, 1.0, 0.35));
     }
-    // The nest on top, Kitty riding the fill
-    assets.items.draw_ex("nest_0", vec2(CLIMB_X, CLIMB_TOP - 4.0), 1.0, 0.3, 0.0, WHITE);
-    let frame = hud.friend.help_frame();
-    let size = assets.friends.get(&frame).size();
-    assets.friends.draw_ex(&frame, vec2(CLIMB_X, CLIMB_TOP - 10.0 - (t * 3.0).sin().abs() * 2.0), -1.0,
-                           22.0 / size.x.max(size.y), 0.0, WHITE);
+    // The nest (or the clue) on top, Kitty riding the fill
+    if hud.clue {
+        clue_mark(vec2(CLIMB_X, CLIMB_TOP - 14.0 - (t * 3.0).sin().abs() * 2.0), 11.0);
+    } else {
+        assets.items.draw_ex("nest_0", vec2(CLIMB_X, CLIMB_TOP - 4.0), 1.0, 0.3, 0.0, WHITE);
+        let frame = hud.friend.help_frame();
+        let size = assets.friends.get(&frame).size();
+        assets.friends.draw_ex(&frame, vec2(CLIMB_X, CLIMB_TOP - 10.0 - (t * 3.0).sin().abs() * 2.0), -1.0,
+                               22.0 / size.x.max(size.y), 0.0, WHITE);
+    }
     let k = vec2(CLIMB_X, filled.y);
     draw_circle(k.x, k.y, 9.0, INK);
     draw_circle(k.x, k.y, 7.0, KITTY_MARK);
     draw_circle(k.x - 2.0, k.y - 2.5, 2.2, fade(WHITE, 0.8));
+}
+
+/// A clue waiting at the top: a little golden bubble with a question mark.
+fn clue_mark(at: Vec2, radius: f32) {
+    draw_circle(at.x, at.y, radius + 2.0, INK);
+    draw_circle(at.x, at.y, radius, GOLD_TEXT);
+    text("?", at.x, at.y + radius * 0.55, radius * 1.6, INK, Align::Center);
 }

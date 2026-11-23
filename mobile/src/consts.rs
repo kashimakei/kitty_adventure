@@ -109,7 +109,6 @@ pub const REGRAB_STEPS: u32 = 24;
 
 // Health
 pub const MAX_HEARTS: u32 = 3;
-pub const START_LIVES: u32 = 3;
 pub const INVULNERABLE_STEPS: u32 = 90;
 pub const KNOCKBACK_SPEED: f32 = 7.0;
 pub const KNOCKBACK_HOP: f32 = -7.0;

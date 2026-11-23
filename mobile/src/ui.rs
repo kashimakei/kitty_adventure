@@ -108,5 +108,5 @@ pub fn clear_buttons() -> [Rect; 2] {
 
 /// An endless run over: Retry, Map.
 pub fn endless_over_buttons() -> [Rect; 2] {
-    pair(800.0)
+    pair(1000.0)
 }

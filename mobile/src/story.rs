@@ -7,9 +7,12 @@ use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use macroquad::prelude::*;
 
+use crate::campaign::{Clue, ClueObject, Region};
 use crate::consts::*;
 use crate::kitty::{RING_FILL, RING_FULL, RING_SWEET, RING_TRACK};
+use crate::save::Stars;
 use crate::sprites::{Assets, Sprites};
+use crate::world::NestGoal;
 use paint::*;
 
 /// Level-clear tally timing (seconds): when the first row appears, the gap between rows, and how
@@ -147,8 +150,9 @@ impl Threat {
     }
 }
 
+/// What each friend says, and the critter their old story level brought (the endless climb uses
+/// these).
 pub struct LevelInfo {
-    pub title: &'static str,
     pub friend: Friend,
     /// What the friend calls down from the nest.
     pub intro: &'static str,
@@ -156,41 +160,40 @@ pub struct LevelInfo {
     pub threat: Threat,
 }
 
+/// What the friend waiting on an endless climb's `level` (1..=5, round and round) says.
 pub fn level_info(level: usize) -> LevelInfo {
-    let friend = Friend::for_level(level);
-    let (title, intro, thanks, threat) = match friend {
+    friend_info(Friend::for_level(level))
+}
+
+pub fn friend_info(friend: Friend) -> LevelInfo {
+    let (intro, thanks, threat) = match friend {
         Friend::Pip => (
-            "Mossy Hollow",
             "Kitty! Up here! The wind blew me sooo high, and my ears are all in a tangle!",
             "Hooray! You hop just like a bunny, Kitty! Thank you!",
             Threat::Squirrels,
         ),
         Friend::Hazel => (
-            "Bramble Path",
             "Hello down there! I'm a bit too prickly to hug, but I would really love a rescue!",
             "You're the bravest cat in the whole forest! Thank you, Kitty!",
             Threat::Dogs,
         ),
         Friend::Mochi => (
-            "Whispering Pines",
             "I packed my cheeks with seeds for the trip... I just didn't plan on the trip being up a tree!",
             "Thank you! Want a sunflower seed? I saved you the biggest one!",
             Threat::Snakes,
         ),
         Friend::Sunny => (
-            "Blackberry Ridge",
             "Peep peep! My wings are still too fluffy to fly. Can you come and get me, Kitty?",
             "Peep peep hooray! I knew you'd come. Thank you, Kitty!",
             Threat::Crows,
         ),
         Friend::Luna => (
-            "The Tallest Tree",
             "Kitty, is that you? I can see the whole forest from up here... and it's a long way down!",
             "We're all together again! Thank you, Kitty, best friend ever!",
             Threat::Eagles,
         ),
     };
-    LevelInfo { title, friend, intro, thanks, threat }
+    LevelInfo { friend, intro, thanks, threat }
 }
 
 pub enum PageArt {
@@ -231,12 +234,12 @@ pub fn intro_pages() -> Vec<Page> {
           rattled the leaves... and it swept Kitty's five best friends right up into the treetops!",
          PageArt::Storm { scared: true }),
         ("Stuck Up High",
-         "In the morning, five little voices called down from the tallest trees. Pip, Hazel, Mochi, Sunny and \
-          Luna were stuck, and much too small to climb down by themselves.",
+         "In the morning, five little voices were calling from all over Whisker Wood: Pip, Hazel, Mochi, Sunny \
+          and Luna, scattered far and wide and much too small to climb down by themselves.",
          PageArt::AllFriends),
         ("Kitty to the Rescue",
-         "Kitty stretched her paws, fluffed up her tail and looked up, up, up. \"Hold on, everyone. I'm coming \
-          to get you!\"",
+         "Kitty stretched her paws, fluffed up her tail and looked up, up, up. \"Hold on, everyone. I'll find \
+          every one of you!\"",
          PageArt::Kitty),
     ])
 }
@@ -251,9 +254,9 @@ pub fn ending_pages() -> Vec<Page> {
          "That night they had a party under the stars, with acorn cake, berry juice and the coziest cuddle \
           pile in all of Whisker Wood.",
          PageArt::Party),
-        ("Here Comes the Wind!",
-         "But listen... the wind is whistling through the branches again, wilder than ever! Whoosh, off go \
-          the friends, giggling into the treetops. The forest is trickier now. Ready, Kitty?",
+        ("The Wind's Game",
+         "But listen... the wind is whistling through the branches again! \"Catch us if you can!\" giggle the \
+          friends, tumbling into the treetops. A new game has begun: the Endless Climb. How high can Kitty go?",
          PageArt::Storm { scared: false }),
     ])
 }
@@ -272,7 +275,8 @@ pub struct Tally {
 // ---------------------------------------------------------------------------------------------
 // Screens
 
-pub fn draw_title(assets: &Assets, time: f32, high_score: u32) {
+/// The title screen; `stars` (won, out of) and the endless best show once there are any.
+pub fn draw_title(assets: &Assets, time: f32, stars: (usize, usize), endless_best: u32) {
     let t = ambient_time();
     backdrop(assets, Mood::Dusk);
 
@@ -292,13 +296,17 @@ pub fn draw_title(assets: &Assets, time: f32, high_score: u32) {
         tap_prompt("Tap to start", 990.0, t);
     }
     let score_alpha = appear(time, 1.0, 0.6);
-    if high_score > 0 {
-        let label = format!("Best  {}", thousands(high_score));
-        let w = measure(&label, 28.0) + 80.0;
+    if stars.0 > 0 || endless_best > 0 {
+        let label = if endless_best > 0 {
+            format!("{} of {}   Best  {}", stars.0, stars.1, thousands(endless_best))
+        } else {
+            format!("{} of {} stars", stars.0, stars.1)
+        };
+        let w = measure(&label, 28.0) + 90.0;
         let r = Rect::new(300.0 - w / 2.0, 1060.0, w, 56.0);
         panel(r, 28.0, score_alpha);
-        assets.items.draw_ex("gold_0", vec2(r.x + 34.0, r.y + 28.0), 1.0, 0.8, 0.0, fade(WHITE, score_alpha));
-        shadowed(&label, r.x + 60.0, r.y + 38.0, 28.0, fade(GOLD_TEXT, score_alpha), Align::Left);
+        crate::ui::star(vec2(r.x + 36.0, r.y + 28.0), 16.0, fade(GOLD_TEXT, score_alpha), fade(INK, score_alpha));
+        shadowed(&label, r.x + 62.0, r.y + 38.0, 28.0, fade(GOLD_TEXT, score_alpha), Align::Left);
     } else {
         shadowed("Help Kitty bring her friends home!", 300.0, 1092.0, 22.0, fade(CREAM, score_alpha * 0.9),
                  Align::Center);
@@ -577,30 +585,62 @@ pub const BASICS_CARD_IN: (f32, f32) = (0.7, 0.5);
 /// How long the level intro waits before a tap moves on (and the prompt shows). On level one it
 /// waits until the how-to-play card is fully in: that card is the only place the controls are
 /// taught, and a quick tapper would otherwise skip it before it appeared.
-pub fn level_intro_wait(level: usize) -> f32 {
-    if level == 1 { BASICS_CARD_IN.0 + BASICS_CARD_IN.1 + 0.1 } else { 0.5 }
+pub fn level_intro_wait(basics: bool) -> f32 {
+    if basics { BASICS_CARD_IN.0 + BASICS_CARD_IN.1 + 0.1 } else { 0.5 }
 }
 
-/// `touch` picks how the level-one card explains the controls: gestures, or keys.
-pub fn draw_level_intro(assets: &Assets, level: usize, info: &LevelInfo, time: f32, touch: bool) {
+/// Who speaks on a level's intro: the friend calling from the nest, or Kitty, looking for a clue.
+#[derive(Clone, Copy)]
+pub enum Speaker {
+    Friend(Friend),
+    Kitty,
+}
+
+/// A region's clues so far: two clue slots, then the friend.
+#[derive(Clone, Copy)]
+pub struct ClueTrack {
+    pub friend: Friend,
+    /// Clues found in the region already.
+    pub found: usize,
+    /// This level's place in the region, 1..=3.
+    pub stage: usize,
+}
+
+/// What a level's intro card shows.
+pub struct IntroCard<'a> {
+    /// "MOSSY HOLLOW · 2 OF 3", or "ENDLESS · CLIMB 7".
+    pub badge: String,
+    pub title: &'a str,
+    pub speaker: Speaker,
+    pub line: &'a str,
+    pub watch_out: Threat,
+    pub watch_tip: Option<&'a str>,
+    /// The critter it warns about is new here.
+    pub is_new: bool,
+    /// The very first level: how to play, too.
+    pub basics: bool,
+    pub track: Option<ClueTrack>,
+}
+
+pub fn draw_level_intro(assets: &Assets, card: &IntroCard, time: f32, touch: bool) {
     let t = ambient_time();
     backdrop(assets, Mood::Day);
-    let first = level == 1;
+    let first = card.basics;
 
-    // Level badge and title
+    // Badge and title
     let badge_in = ease_out_back(time / 0.5);
-    let label = format!("LEVEL {level}");
-    let w = measure(&label, 26.0) + 48.0;
+    let w = measure(&card.badge, 24.0) + 48.0;
     let badge = Rect::new(300.0 - w / 2.0, 40.0 - (1.0 - badge_in) * 80.0, w, 46.0);
     rounded_rect(badge, 23.0, rgb(1.0, 0.78, 0.30), rgb(0.95, 0.58, 0.18));
     rounded_outline(badge, 23.0, 3.0, fade(INK, 0.6));
-    text(&label, 300.0, badge.y + 33.0, 26.0, INK, Align::Center);
+    text(&card.badge, 300.0, badge.y + 32.0, 24.0, INK, Align::Center);
     let title_in = appear(time, 0.1, 0.5);
-    let size = fit_size(info.title, 60.0, 560.0);
-    outlined(info.title, 300.0, 150.0 + (1.0 - title_in) * 20.0, size, fade(CREAM, title_in),
+    let size = fit_size(card.title, 60.0, 560.0);
+    outlined(card.title, 300.0, 150.0 + (1.0 - title_in) * 20.0, size, fade(CREAM, title_in),
              fade(INK, title_in), Align::Center);
 
-    // The friend calling from a nest at the end of a branch, which grows from a trunk on the right
+    // The friend calling from a nest at the end of a branch (or Kitty, perched where a clue might
+    // be), which grows from a trunk on the right
     let scene_y = if first { 318.0 } else { 420.0 };
     let nest_at = vec2(300.0, scene_y);
     let sway = wave(t, 0.8, 4.0, 0.0);
@@ -614,35 +654,79 @@ pub fn draw_level_intro(assets: &Assets, level: usize, info: &LevelInfo, time: f
         assets.foliage.draw_ex(if i == 1 { "green_5" } else { "green_3" }, vec2(x, branch_y(x) - 14.0), 1.0, 1.5,
                                wiggle, WHITE);
     }
-    let bounce = (t * 3.0).sin().abs() * 6.0;
     let scale = if first { 1.3 } else { 1.7 };
-    friend_in_nest(assets, &info.friend.help_frame(), nest_at + vec2(0.0, sway), scale, bounce, -1.0, 1.0);
-    // "Help!" calls out beside the nest, a little jump with each call
     let call = (t * 1.4).fract();
     let jump = if call < 0.25 { (call / 0.25 * std::f32::consts::PI).sin() * 12.0 } else { 0.0 };
-    outlined("Help!", nest_at.x - 140.0, nest_at.y - 50.0 * scale - jump, 38.0, rgb(1.0, 0.92, 0.55), INK,
-             Align::Center);
+    let speaker = match card.speaker {
+        Speaker::Friend(friend) => {
+            let bounce = (t * 3.0).sin().abs() * 6.0;
+            friend_in_nest(assets, &friend.help_frame(), nest_at + vec2(0.0, sway), scale, bounce, -1.0, 1.0);
+            // "Help!" calls out beside the nest, a little jump with each call
+            outlined("Help!", nest_at.x - 140.0, nest_at.y - 50.0 * scale - jump, 38.0, rgb(1.0, 0.92, 0.55), INK,
+                     Align::Center);
+            friend.full_name()
+        }
+        Speaker::Kitty => {
+            assets.kitty.draw_ex("sit_alert_0", vec2(nest_at.x, branch_y(nest_at.x) - 2.0), 1.0, scale * 0.9, 0.0, WHITE);
+            outlined("?", nest_at.x - 110.0, nest_at.y - 60.0 * scale - jump, 56.0, rgb(1.0, 0.92, 0.55), INK,
+                     Align::Center);
+            "Kitty"
+        }
+    };
 
-    // What the friend says
+    // What they say
     let say_in = appear(time, 0.3, 0.5);
-    let bubble = speech_bubble(info.intro, info.friend.full_name(), nest_at.y + 30.0 + (1.0 - say_in) * 30.0,
+    let bubble = speech_bubble(card.line, speaker, nest_at.y + 30.0 + (1.0 - say_in) * 30.0,
                                vec2(nest_at.x, nest_at.y + 14.0), if first { 23.0 } else { 26.0 }, say_in);
 
-    // The new danger, and on the first level the basics
+    // The danger to watch for, then on the first level the basics, or the clues so far
     let tip_in = appear(time, 0.5, 0.5);
     let y = bubble.bottom() + 22.0 + (1.0 - tip_in) * 30.0;
-    let (sprites, frame) = info.threat.icon(assets);
-    let y = tip_card(y, &format!("Watch out: {}", info.threat.name()), info.threat.tip(), tip_in,
+    let (sprites, frame) = card.watch_out.icon(assets);
+    let heading = if card.is_new {
+        format!("New danger: {}!", card.watch_out.name())
+    } else {
+        format!("Watch out: {}", card.watch_out.name())
+    };
+    let y = tip_card(y, &heading, card.watch_tip.unwrap_or(card.watch_out.tip()), tip_in,
                      |at| fit_sprite_centred(sprites, frame, at, 88.0, -1.0, fade(WHITE, tip_in)));
     let more_in = appear(time, BASICS_CARD_IN.0, BASICS_CARD_IN.1);
     if first {
         basics_card(assets, y + 16.0 + (1.0 - more_in) * 30.0, more_in, touch);
-    } else {
-        friends_progress(assets, level, (y + 1094.0) / 2.0 + (1.0 - more_in) * 30.0, t, more_in);
+    } else if let Some(track) = card.track {
+        clue_track(assets, &track, (y + 1094.0) / 2.0 + (1.0 - more_in) * 30.0, t, more_in);
     }
 
-    if time > level_intro_wait(level).max(0.6) {
+    if time > level_intro_wait(first).max(0.6) {
         tap_prompt("Tap to climb!", 1128.0, t);
+    }
+}
+
+/// The clues found so far in a region and its friend at the end, in a little panel centred on
+/// `centre_y`: found clues golden, this level's slot glowing.
+pub(crate) fn clue_track(assets: &Assets, track: &ClueTrack, centre_y: f32, t: f32, alpha: f32) {
+    let slot = 110.0;
+    let r = Rect::new(300.0 - slot * 1.5 - 20.0, centre_y - 48.0, slot * 3.0 + 40.0, 100.0);
+    panel(r, 26.0, alpha);
+    let name = track.friend.name();
+    let label = if track.stage >= 3 { format!("{name} is up there!") } else { format!("Clues to {name}: {} of 2", track.found) };
+    shadowed(&label, 300.0, r.y - 14.0, 24.0, fade(CREAM, alpha), Align::Center);
+    for i in 0..3 {
+        let centre = vec2(r.x + 20.0 + slot * (i as f32 + 0.5), r.center().y);
+        if i + 1 == track.stage {
+            let glow = (t * 3.0).sin() * 0.5 + 0.5;
+            draw_circle(centre.x, centre.y, 40.0, fade(GOLD_TEXT, (0.2 + glow * 0.2) * alpha));
+            draw_circle_lines(centre.x, centre.y, 40.0, 3.0, fade(GOLD_TEXT, 0.85 * alpha));
+        }
+        if i < 2 {
+            let found = i < track.found;
+            draw_circle(centre.x, centre.y, 26.0, fade(INK, 0.5 * alpha));
+            draw_circle(centre.x, centre.y, 23.0, fade(if found { GOLD_TEXT } else { CREAM }, if found { alpha } else { 0.4 * alpha }));
+            text(if found { "!" } else { "?" }, centre.x, centre.y + 12.0, 34.0, fade(INK, alpha), Align::Center);
+        } else {
+            let tint = if track.stage >= 3 { fade(WHITE, alpha) } else { fade(Color::new(0.62, 0.66, 0.66, 0.6), alpha) };
+            fit_sprite_centred(&assets.friends, &track.friend.help_frame(), centre, 64.0, 1.0, tint);
+        }
     }
 }
 
@@ -764,7 +848,7 @@ pub(crate) fn charge_ring(centre: Vec2, filled: f32, color: Color, alpha: f32) {
 }
 
 /// Shown over the world while the rescued friend cheers.
-pub fn draw_rescue_banner(assets: &Assets, info: &LevelInfo, time: f32) {
+pub fn draw_goal_banner(assets: &Assets, nest: NestGoal, found: Option<&str>, time: f32) {
     let t = ambient_time();
     let slide = ease_out_back(time / 0.5);
     let leave = appear(time, 2.7, 0.3);
@@ -782,24 +866,62 @@ pub fn draw_rescue_banner(assets: &Assets, info: &LevelInfo, time: f32) {
     rounded_outline(r, 30.0, 4.0, fade(INK, 0.7));
     let icon_at = vec2(r.x + 66.0, r.bottom() - 16.0);
     let hop = (t * 6.0).sin().abs() * 8.0;
-    fit_sprite(&assets.friends, &info.friend.cheer_frame((t * 6.0) as usize), icon_at - vec2(0.0, hop), 90.0, 1.0, WHITE);
-    text("Hooray!", r.x + 130.0, r.y + 44.0, 26.0, fade(INK, 0.8), Align::Left);
-    let line = format!("You found {}!", info.friend.name());
+    let (small, line) = match nest {
+        NestGoal::Rescue(friend) => {
+            fit_sprite(&assets.friends, &friend.cheer_frame((t * 6.0) as usize), icon_at - vec2(0.0, hop), 90.0, 1.0, WHITE);
+            ("Hooray!", format!("You found {}!", friend.name()))
+        }
+        NestGoal::Clue { object, .. } => {
+            clue_icon(assets, object, icon_at - vec2(0.0, 40.0 + hop), 70.0, 1.0);
+            ("A clue!", found.unwrap_or("A clue!").to_string())
+        }
+    };
+    text(small, r.x + 130.0, r.y + 44.0, 26.0, fade(INK, 0.8), Align::Left);
     let size = fit_size(&line, 40.0, r.w - 150.0);
     outlined(&line, r.x + 130.0, r.y + 92.0, size, CREAM, INK, Align::Left);
 }
 
-pub fn draw_level_clear(assets: &Assets, info: &LevelInfo, tally: &Tally, time: f32) {
+/// A clue's object centred on `at`, `size` across: its painting once there is one, until then
+/// a golden bubble with an exclamation mark.
+pub(crate) fn clue_icon(assets: &Assets, object: ClueObject, at: Vec2, size: f32, alpha: f32) {
+    let frame = format!("{}_0", object.sprite());
+    if assets.clues.has(&frame) {
+        fit_sprite_centred(&assets.clues, &frame, at, size, 1.0, fade(WHITE, alpha));
+    } else {
+        draw_circle(at.x, at.y, size * 0.42, fade(INK, 0.6 * alpha));
+        draw_circle(at.x, at.y, size * 0.38, fade(GOLD_TEXT, alpha));
+        outlined("!", at.x, at.y + size * 0.2, size * 0.55, fade(CREAM, alpha), fade(INK, alpha), Align::Center);
+    }
+}
+/// What a level-clear card shows besides the tally.
+pub struct ClearCard<'a> {
+    pub title: &'a str,
+    pub nest: NestGoal,
+    /// A rescue: the friend's thanks. A clue: what Kitty found.
+    pub line: &'a str,
+    pub speaker: &'a str,
+    /// A campaign level's stars: those this attempt earned, and which of them are new.
+    pub stars: Option<(Stars, Stars)>,
+    pub star_time: f32,
+    pub new_best: bool,
+    /// An endless run shows its score so far.
+    pub run_score: bool,
+}
+
+/// When the level-clear card has finished counting up (a tap before then skips to it).
+pub const CLEAR_COUNTED: f32 = TALLY_START + 6.0 * TALLY_ROW + 1.0;
+
+pub fn draw_level_clear(assets: &Assets, card: &ClearCard, tally: &Tally, time: f32) {
     let t = ambient_time();
     backdrop(assets, Mood::Party);
     confetti(Rect::new(0.0, 0.0, VIEW_W, VIEW_H), t, 60, 1.0);
 
     let pop = ease_out_back(time / 0.6);
-    outlined("Level Clear!", 300.0, 100.0 - (1.0 - pop) * 160.0, fit_size("Level Clear!", 68.0, 560.0),
-             GOLD_TEXT, INK, Align::Center);
+    let heading = if matches!(card.nest, NestGoal::Clue { .. }) { "Clue Found!" } else { "Level Clear!" };
+    outlined(heading, 300.0, 96.0 - (1.0 - pop) * 160.0, fit_size(heading, 68.0, 560.0), GOLD_TEXT, INK, Align::Center);
 
-    // The friend cheering in the nest, sparkles about
-    let nest_at = vec2(300.0, 400.0);
+    // The friend cheering in the nest (or the clue, caught on the branch), sparkles about
+    let nest_at = vec2(300.0, 320.0);
     for i in 0..5 {
         let a = t * 0.8 + i as f32 * TAU / 5.0;
         let at = nest_at + vec2(a.cos() * 130.0, -60.0 + a.sin() * 50.0);
@@ -812,69 +934,164 @@ pub fn draw_level_clear(assets: &Assets, info: &LevelInfo, tally: &Tally, time: 
         assets.foliage.draw_ex("green_5", vec2(x, nest_at.y - 6.0 + (nest_at.x - x) * 0.08), 1.0, 1.4, wiggle, WHITE);
     }
     let hop = (t * 5.0).sin().abs() * 20.0;
-    friend_in_nest(assets, &info.friend.cheer_frame((t * 6.0) as usize), nest_at, 1.6, hop, 1.0, 1.0);
+    match card.nest {
+        NestGoal::Rescue(friend) => friend_in_nest(assets, &friend.cheer_frame((t * 6.0) as usize), nest_at, 1.4, hop, 1.0, 1.0),
+        NestGoal::Clue { object, .. } => clue_icon(assets, object, nest_at - vec2(0.0, 30.0 + hop * 0.5), 96.0, 1.0),
+    }
     // After the friend, so tall ears hopping up can't cover it
-    shadowed(info.title, 300.0, 146.0, 26.0, CREAM, Align::Center);
+    shadowed(card.title, 300.0, 142.0, 26.0, CREAM, Align::Center);
 
     let say_in = appear(time, 0.3, 0.4);
-    let bubble = speech_bubble(info.thanks, info.friend.full_name(), 442.0 + (1.0 - say_in) * 20.0,
+    let bubble = speech_bubble(card.line, card.speaker, 352.0 + (1.0 - say_in) * 20.0,
                                vec2(nest_at.x, nest_at.y + 6.0), 24.0, say_in);
 
     // The tally, counting up one row at a time
     let other = tally.level_total.saturating_sub(tally.rescue + tally.time_bonus + tally.no_damage + tally.collected);
+    let goal = if matches!(card.nest, NestGoal::Clue { .. }) { "Clue found" } else { "Rescue" };
     let rows: [(&str, u32); 5] = [
-        ("Rescue", tally.rescue),
+        (goal, tally.rescue),
         ("Time bonus", tally.time_bonus),
         ("No-bump bonus", tally.no_damage),
         ("Treats collected", tally.collected),
         ("Climbing & bops", other),
     ];
     let card_in = appear(time, 0.4, 0.4);
-    let r = Rect::new(40.0, bubble.bottom() + 24.0 + (1.0 - card_in) * 30.0, 520.0, 410.0);
+    let h = if card.run_score { 340.0 } else { 290.0 };
+    let r = Rect::new(40.0, bubble.bottom() + 18.0 + (1.0 - card_in) * 30.0, 520.0, h);
     panel(r, 26.0, card_in);
-    let mut y = r.y + 50.0;
+    let mut y = r.y + 44.0;
     for (i, &(label, value)) in rows.iter().enumerate() {
         let start = TALLY_START + i as f32 * TALLY_ROW;
         let shown = appear(time, start, 0.2);
         let counted = (value as f32 * ((time - start) / TALLY_COUNT).clamp(0.0, 1.0)).round() as u32;
         let dim = if value == 0 { 0.5 } else { 1.0 };
-        text(label, r.x + 30.0, y, 25.0, fade(CREAM, shown * dim), Align::Left);
+        text(label, r.x + 30.0, y, 24.0, fade(CREAM, shown * dim), Align::Left);
         let number = if value == 0 { "--".to_string() } else { format!("+{}", thousands(counted)) };
-        text(&number, r.right() - 30.0, y, 25.0, fade(LEAF_TEXT, shown * dim), Align::Right);
-        y += 44.0;
+        text(&number, r.right() - 30.0, y, 24.0, fade(LEAF_TEXT, shown * dim), Align::Right);
+        y += 38.0;
     }
     let after_rows = TALLY_START + rows.len() as f32 * TALLY_ROW;
     let line_in = appear(time, after_rows - 0.1, 0.3);
-    draw_line(r.x + 30.0, y - 18.0, r.x + 30.0 + (r.w - 60.0) * line_in, y - 18.0, 3.0, fade(CREAM, 0.35 * card_in));
-    y += 22.0;
+    draw_line(r.x + 30.0, y - 16.0, r.x + 30.0 + (r.w - 60.0) * line_in, y - 16.0, 3.0, fade(CREAM, 0.35 * card_in));
+    y += 18.0;
     let total_in = appear(time, after_rows, 0.2);
     let total = (tally.level_total as f32 * ((time - after_rows) / TALLY_COUNT).clamp(0.0, 1.0)).round() as u32;
-    shadowed("Level total", r.x + 30.0, y, 28.0, fade(CREAM, total_in), Align::Left);
-    shadowed(&thousands(total), r.right() - 30.0, y, 28.0, fade(CREAM, total_in), Align::Right);
-    y += 62.0;
-    let score_start = after_rows + TALLY_ROW + 0.1;
-    let score_in = appear(time, score_start, 0.2);
-    let before = tally.score.saturating_sub(tally.level_total) as f32;
-    let score = (before + tally.level_total as f32 * ((time - score_start) / 0.8).clamp(0.0, 1.0)).round() as u32;
-    outlined("Score", r.x + 30.0, y, 38.0, fade(GOLD_TEXT, score_in), fade(INK, score_in), Align::Left);
-    outlined(&thousands(score), r.right() - 30.0, y, 38.0, fade(GOLD_TEXT, score_in), fade(INK, score_in),
-             Align::Right);
+    outlined("Level total", r.x + 30.0, y, 30.0, fade(GOLD_TEXT, total_in), fade(INK, total_in), Align::Left);
+    outlined(&thousands(total), r.right() - 30.0, y, 30.0, fade(GOLD_TEXT, total_in), fade(INK, total_in), Align::Right);
+    let later = after_rows + TALLY_ROW + 0.1;
+    if card.run_score {
+        y += 50.0;
+        let score_in = appear(time, later, 0.2);
+        let before = tally.score.saturating_sub(tally.level_total) as f32;
+        let score = (before + tally.level_total as f32 * ((time - later) / 0.8).clamp(0.0, 1.0)).round() as u32;
+        shadowed("Run score", r.x + 30.0, y, 28.0, fade(CREAM, score_in), Align::Left);
+        shadowed(&thousands(score), r.right() - 30.0, y, 28.0, fade(CREAM, score_in), Align::Right);
+    }
 
-    if time > score_start + 0.8 {
+    // The stars, popping in one by one, new ones with a burst
+    let mut below = r.bottom();
+    if let Some((stars, fresh)) = card.stars {
+        let won = [stars.top, stars.no_bumps, stars.quick];
+        let new = [fresh.top, fresh.no_bumps, fresh.quick];
+        let labels = ["Reached the top", "No bumps", &format!("Under {}", mmss(card.star_time))];
+        for k in 0..3 {
+            let start = later + k as f32 * 0.25;
+            let pop = ease_out_back(((time - start) / 0.35).clamp(0.0, 1.0));
+            let at = vec2(130.0 + 170.0 * k as f32, r.bottom() + 70.0);
+            if new[k] && pop > 0.0 {
+                for i in 0..6 {
+                    let a = i as f32 * TAU / 6.0 + t;
+                    assets.items.draw_ex("star_0", at + vec2(a.cos(), a.sin()) * 44.0 * pop, 1.0, 0.45 * pop, a, fade(WHITE, pop));
+                }
+            }
+            let fill = if won[k] { GOLD_TEXT } else { fade(CREAM, 0.25) };
+            crate::ui::star(at, 30.0 * pop.max(0.01), fade(fill, pop.min(1.0)), fade(INK, 0.8 * pop.min(1.0)));
+            text(labels[k], at.x, at.y + 56.0, 19.0, fade(CREAM, pop.min(1.0)), Align::Center);
+        }
+        below = r.bottom() + 150.0;
+    }
+    if card.new_best {
+        let burst = appear(time, later + 0.9, 0.4);
+        ribbon("New best!", vec2(300.0, below + 46.0), 30.0, burst, Ribbon::Gold);
+    }
+}
+
+/// Seconds as m:ss.
+pub(crate) fn mmss(seconds: f32) -> String {
+    let s = seconds.max(0.0).round() as u32;
+    format!("{}:{:02}", s / 60, s % 60)
+}
+
+/// After a clue level: the friend's trail, and the region's helper saying where they went.
+pub fn draw_clue_card(assets: &Assets, region: &Region, title: &str, clue: &Clue, track: ClueTrack, time: f32) {
+    let t = ambient_time();
+    backdrop(assets, Mood::Day);
+    let pop = ease_out_back(time / 0.6);
+    outlined("A Clue!", 300.0, 100.0 - (1.0 - pop) * 160.0, 68.0, GOLD_TEXT, INK, Align::Center);
+    shadowed(title, 300.0, 146.0, 26.0, CREAM, Align::Center);
+
+    // A picture of the friend tumbling away on the wind, the clue caught in the corner
+    let pic_in = appear(time, 0.15, 0.4);
+    let r = Rect::new(60.0, 186.0 + (1.0 - pic_in) * 30.0, 480.0, 290.0);
+    picture_frame(r, Mood::Day, pic_in);
+    clip(Some(r));
+    for i in 0..4 {
+        let x = r.x + ((t * 140.0 + i as f32 * 150.0) % (r.w + 200.0)) - 100.0;
+        gust(vec2(x, r.y + 70.0 + i as f32 * 50.0), 120.0, fade(WHITE, pic_in * 0.4), r);
+    }
+    let drift = (t * 60.0) % (r.w + 160.0) - 80.0;
+    let tumble = vec2(r.x + drift, r.y + 120.0 + (t * 2.0).sin() * 24.0);
+    fit_sprite_centred(&assets.friends, &track.friend.storm_frame((t * 3.0) as usize), tumble, 100.0, 1.0, fade(WHITE, pic_in));
+    clip(None);
+    clue_icon(assets, clue.object, vec2(r.right() - 64.0, r.bottom() - 58.0), 84.0, pic_in);
+
+    // The helper, perched on the frame's corner once there's a picture of them, says what they saw
+    let helper = &region.helper;
+    let perch = vec2(r.x + 70.0, r.bottom() + 4.0);
+    let talking = ((t * 4.0) as usize).is_multiple_of(2);
+    let frame = format!("{}_{}_0", helper.sprite, if talking { "talk" } else { "idle" });
+    let idle = format!("{}_idle_0", helper.sprite);
+    if assets.helpers.has(&frame) {
+        assets.helpers.draw_ex(&frame, perch, 1.0, 1.0, 0.0, fade(WHITE, pic_in));
+    } else if assets.helpers.has(&idle) {
+        assets.helpers.draw_ex(&idle, perch, 1.0, 1.0, 0.0, fade(WHITE, pic_in));
+    }
+    let say_in = appear(time, 0.4, 0.4);
+    let bubble = speech_bubble(clue.helper_line, helper.full_name, r.bottom() + 36.0 + (1.0 - say_in) * 20.0,
+                               perch, 25.0, say_in);
+
+    let track_in = appear(time, 0.7, 0.4);
+    clue_track(assets, &track, (bubble.bottom() + 1094.0) / 2.0 + (1.0 - track_in) * 30.0, t, track_in);
+    if time > 0.9 {
         tap_prompt("Tap to continue", 1128.0, t);
     }
 }
 
+/// Out of hearts: a card over the level, with room for Retry and Map below.
+pub fn draw_try_again(assets: &Assets, time: f32) {
+    let t = ambient_time();
+    let dim = appear(time, 0.0, 0.3);
+    draw_rectangle(0.0, 0.0, VIEW_W, VIEW_H, Color::new(0.03, 0.05, 0.08, 0.6 * dim));
+    let drop = ease_out_back(time / 0.5);
+    let r = Rect::new(60.0, 330.0 - (1.0 - drop) * 120.0, 480.0, 360.0);
+    panel(r, 30.0, dim);
+    outlined("Out of hearts!", 300.0, r.y + 80.0, fit_size("Out of hearts!", 54.0, 440.0), fade(rgb(1.0, 0.62, 0.55), dim),
+             fade(INK, dim), Align::Center);
+    let nap = vec2(300.0, r.y + 230.0);
+    shadow_ellipse(nap + vec2(0.0, 4.0), 90.0, 14.0, 0.35 * dim);
+    let frame = if (t / 1.2) as i32 % 2 == 0 { "sleep_0" } else { "sleep_1" };
+    assets.kitty.draw_ex(frame, nap - vec2(0.0, 12.0), 1.0, 1.6, 0.0, fade(WHITE, dim));
+    shadowed("Shake it off, Kitty! Have another go?", 300.0, r.bottom() - 40.0, 24.0, fade(CREAM, dim), Align::Center);
+}
 /// `previous_best` is the high score from before this game, so beating it shows the ribbon.
-pub fn draw_game_over(assets: &Assets, score: u32, previous_best: u32, time: f32) {
+/// An endless run over: how far Kitty climbed and what she scored, with room for Retry and Map.
+pub fn draw_endless_over(assets: &Assets, score: u32, best: u32, new_best: bool, climb: u32, time: f32) {
     let t = ambient_time();
     backdrop(assets, Mood::Night);
-    let new_best = score > previous_best;
-    let high_score = score.max(previous_best);
 
     let drop = ease_out_back(time / 0.7);
-    outlined("Game Over", 300.0, 170.0 - (1.0 - drop) * 200.0, fit_size("Game Over", 84.0, 560.0),
-             rgb(1.0, 0.62, 0.55), INK, Align::Center);
+    outlined("What a Climb!", 300.0, 170.0 - (1.0 - drop) * 200.0, fit_size("What a Climb!", 80.0, 560.0),
+             GOLD_TEXT, INK, Align::Center);
 
     // Kitty curled up for a nap on a pile of leaves
     let nap = Vec2::new(300.0, 470.0);
@@ -891,16 +1108,16 @@ pub fn draw_game_over(assets: &Assets, score: u32, previous_best: u32, time: f32
         let alpha = (phase * 3.0).min(1.0) * (1.0 - phase);
         shadowed("z", at.x, at.y, 30.0 + i as f32 * 8.0, fade(CREAM, alpha), Align::Center);
     }
-    shadowed("Kitty needs a little cat nap...", 300.0, 560.0, 24.0, CREAM, Align::Center);
+    shadowed(&format!("Kitty reached climb {climb}!"), 300.0, 560.0, 26.0, CREAM, Align::Center);
 
     // Score card
     let card_in = appear(time, 0.4, 0.5);
-    let r = Rect::new(70.0, 610.0 + (1.0 - card_in) * 30.0, 460.0, 260.0);
+    let r = Rect::new(70.0, 610.0 + (1.0 - card_in) * 30.0, 460.0, 250.0);
     panel(r, 28.0, card_in);
     shadowed("Score", 300.0, r.y + 56.0, 28.0, fade(CREAM, card_in), Align::Center);
     outlined(&thousands(score), 300.0, r.y + 130.0, 64.0, fade(GOLD_TEXT, card_in), fade(INK, card_in),
              Align::Center);
-    let best = format!("Best  {}", thousands(high_score));
+    let best = format!("Best  {}", thousands(best.max(score)));
     let bw = measure(&best, 26.0);
     assets.items.draw_ex("gold_0", vec2(300.0 - bw / 2.0 - 30.0, r.y + 200.0), 1.0, 0.7, 0.0, fade(WHITE, card_in));
     shadowed(&best, 300.0 + 10.0, r.y + 210.0, 26.0, fade(CREAM, card_in), Align::Center);
@@ -908,42 +1125,15 @@ pub fn draw_game_over(assets: &Assets, score: u32, previous_best: u32, time: f32
     if new_best {
         // A golden ribbon with stars bursting from it
         let burst = appear(time, 1.0, 0.5);
-        let ribbon_at = vec2(300.0, r.bottom() + 70.0);
+        let ribbon_at = vec2(300.0, r.bottom() + 66.0);
         for i in 0..10 {
             let a = i as f32 * TAU / 10.0 + t * 0.6;
             let reach = 150.0 + (t * 3.0 + i as f32).sin() * 20.0;
             let at = ribbon_at + vec2(a.cos() * reach, a.sin() * reach * 0.45) * burst;
             assets.items.draw_ex("star_0", at, 1.0, 0.8 * burst, a * 2.0, fade(WHITE, burst));
         }
-        ribbon("New high score!", ribbon_at, 34.0, burst, Ribbon::Gold);
+        ribbon("New best!", ribbon_at, 34.0, burst, Ribbon::Gold);
     }
-
-    if time > 1.0 {
-        tap_prompt("Tap to try again", 1110.0, t);
-    }
-}
-
-pub fn draw_life_lost(lives_left: u32, time: f32) {
-    let dim = appear(time, 0.0, 0.25);
-    draw_rectangle(0.0, 0.0, VIEW_W, VIEW_H, Color::new(0.05, 0.02, 0.04, 0.5 * dim));
-    let slide = ease_out_back(time / 0.45);
-    let r = Rect::new(80.0, 380.0 - (1.0 - slide) * 200.0, 440.0, 280.0);
-    panel(r, 30.0, dim);
-    outlined("Ouch!", 300.0, r.y + 84.0, 72.0, fade(rgb(1.0, 0.62, 0.55), dim), fade(INK, dim), Align::Center);
-    let label = if lives_left == 1 { "1 life left".to_string() } else { format!("{lives_left} lives left") };
-    shadowed(&label, 300.0, r.y + 140.0, 28.0, fade(CREAM, dim), Align::Center);
-    // One paw print per life left; the one just lost fades away
-    let n = lives_left + 1;
-    let gap = 70.0;
-    let x0 = 300.0 - (n - 1) as f32 * gap / 2.0;
-    for i in 0..n {
-        let lost = i == lives_left;
-        let alpha = if lost { (1.0 - appear(time, 0.4, 0.6)) * 0.9 } else { 1.0 };
-        let sink = if lost { appear(time, 0.4, 0.6) * 20.0 } else { 0.0 };
-        paw(vec2(x0 + i as f32 * gap, r.y + 200.0 + sink), 1.0, fade(ORANGE_TEXT, alpha * dim));
-    }
-    let ready = appear(time, 0.8, 0.4);
-    shadowed("Get ready...", 300.0, r.bottom() + 50.0, 26.0, fade(CREAM, ready), Align::Center);
 }
 
 /// The pictures beside the pause card's reminders: gestures on a touch screen, keys otherwise.
@@ -980,15 +1170,12 @@ pub fn draw_paused(assets: &Assets, time: f32, touch: bool) {
         ]
     };
     let layout = IconRows { icon_x: 112.0, text_x: 180.0, text_w: 352.0, size: 22.0, gap: 10.0 };
-    // The title above the rows, and the tap prompt below them
-    let h = 124.0 + layout.height(&rows) + 106.0;
-    let r = Rect::new(40.0, 580.0 - h / 2.0, 520.0, h);
+    // The title above the rows; the buttons go below the card
+    let h = 124.0 + layout.height(&rows) + 30.0;
+    let r = Rect::new(40.0, 830.0 - h, 520.0, h);
     panel(r, 30.0, dim);
     outlined("Paused", 300.0, r.y + 86.0, 64.0, fade(CREAM, dim), fade(INK, dim), Align::Center);
     layout.draw(&rows, r.y + 124.0, dim, |kind, at| legend_icon(assets, kind, at, t, dim));
-    if time > 0.3 {
-        tap_prompt("Tap to resume", r.bottom() - 46.0, t);
-    }
 }
 
 /// A little moving picture of a gesture or the keys for one of the pause card's rows.
@@ -1363,32 +1550,6 @@ pub(crate) fn fit_sprite_centred(sprites: &Sprites, name: &str, centre: Vec2, si
     sprites.draw_ex(name, at, facing, scale, 0.0, tint);
 }
 
-/// The five friends in a row on a level intro: cheering once rescued, ringed in gold for this
-/// level, pale silhouettes still to come.
-fn friends_progress(assets: &Assets, level: usize, centre_y: f32, t: f32, alpha: f32) {
-    let rescued = (level - 1) % FRIENDS.len();
-    let slot = 84.0;
-    let r = Rect::new(300.0 - slot * 2.5 - 20.0, centre_y - 44.0, slot * 5.0 + 40.0, 100.0);
-    panel(r, 26.0, alpha);
-    let label = format!("Friends rescued: {rescued} of {}", FRIENDS.len());
-    shadowed(&label, 300.0, r.y - 14.0, 24.0, fade(CREAM, alpha), Align::Center);
-    for (i, friend) in FRIENDS.into_iter().enumerate() {
-        let centre = vec2(r.x + 20.0 + slot * (i as f32 + 0.5), r.center().y);
-        let (frame, tint) = if i < rescued {
-            (friend.cheer_frame((t * 4.0) as usize + i), fade(WHITE, alpha))
-        } else if i == rescued {
-            let glow = (t * 3.0).sin() * 0.5 + 0.5;
-            draw_circle(centre.x, centre.y, 38.0, fade(GOLD_TEXT, (0.2 + glow * 0.2) * alpha));
-            draw_circle_lines(centre.x, centre.y, 38.0, 3.0, fade(GOLD_TEXT, 0.85 * alpha));
-            (friend.help_frame(), fade(WHITE, alpha))
-        } else {
-            (friend.help_frame(), fade(Color::new(0.62, 0.66, 0.66, 0.5), alpha))
-        };
-        let hop = if i < rescued { (t * 4.0 + i as f32).sin().abs() * 4.0 } else { 0.0 };
-        fit_sprite_centred(&assets.friends, &frame, centre - vec2(0.0, hop), 60.0, 1.0, tint);
-    }
-}
-
 /// Seconds since the game started: for ambient motion that shouldn't restart with each screen.
 fn ambient_time() -> f32 {
     get_time() as f32
@@ -1665,9 +1826,7 @@ mod tests {
     /// later levels move on as soon as before.
     #[test]
     fn the_first_intro_waits_for_the_how_to_play_card() {
-        assert!(level_intro_wait(1) >= BASICS_CARD_IN.0 + BASICS_CARD_IN.1);
-        for level in 2..=5 {
-            assert_eq!(level_intro_wait(level), 0.5);
-        }
+        assert!(level_intro_wait(true) >= BASICS_CARD_IN.0 + BASICS_CARD_IN.1);
+        assert_eq!(level_intro_wait(false), 0.5);
     }
 }

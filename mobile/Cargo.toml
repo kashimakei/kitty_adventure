@@ -13,6 +13,12 @@ crate-type = ["rlib", "cdylib"]
 name = "kitty"
 path = "src/main.rs"
 
+[features]
+default = ["playtest"]
+# A hidden way to open every level (tap "Whisker Wood" on the map seven times), for testing builds.
+# Build without default features for a store release.
+playtest = []
+
 [dependencies]
 macroquad = { version = "0.4", default-features = false, features = ["audio"] }
 serde = { version = "1", features = ["derive"] }

@@ -843,12 +843,6 @@ impl Kitty {
         self.velocity = STOMP_BOUNCE;
     }
 
-    /// Back on the ground at `x` with full hearts (after losing a life or starting a level).
-    pub fn respawn(&mut self, x: f32) {
-        *self = Kitty::new(x);
-        self.invulnerable = INVULNERABLE_STEPS;
-    }
-
     // ------------------ Animation -------------------
 
     fn play(&mut self, clip: &'static KittyClip) {

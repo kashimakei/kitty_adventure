@@ -7,6 +7,7 @@ use macroquad::prelude::*;
 use crate::camera::{Camera, View};
 use crate::consts::*;
 use crate::effects::Effects;
+use crate::flow::AttemptResult;
 use crate::enemies::{self, Enemy, EnemyCtx, KittyView, Projectile, Sfx, Spawner};
 use crate::input::Controls;
 use crate::items::{Item, ItemKind};
@@ -98,7 +99,6 @@ pub struct World {
     pub reached: bool,
     goal_time: f32,
     pub sfx: Vec<Sfx>,
-    start_x: f32,
     top_y: f32,
 }
 
@@ -156,7 +156,6 @@ impl World {
             reached: false,
             goal_time: 0.0,
             sfx: Vec::new(),
-            start_x,
             top_y: plan.top_y,
         }
     }
@@ -186,18 +185,6 @@ impl World {
         for at in apply_pushes(&mut self.limbs, pushes) {
             self.effects.shake_leaves(at, 2, &mut self.rng);
         }
-    }
-
-    /// Kitty lost all her hearts: back to the start with full hearts.
-    pub fn respawn_kitty(&mut self) {
-        self.kitty.respawn(self.start_x);
-        self.camera.snap_to(self.kitty.rect());
-        self.prev_camera = vec2(self.camera.x, self.camera.y);
-        self.prev_kitty = vec2(self.kitty.x, self.kitty.y);
-        self.projectiles.clear();
-        // Give her room to breathe
-        let start = vec2(self.start_x, GROUND_Y);
-        self.enemies.retain(|e| e.position().distance(start) > 350.0);
     }
 
     pub fn step(&mut self, controls: &Controls) -> Outcome {
@@ -482,6 +469,11 @@ impl World {
     /// How long ago Kitty reached the goal.
     pub fn goal_time(&self) -> f32 {
         self.goal_time
+    }
+
+    /// How the attempt has gone, for scoring it.
+    pub fn result(&self) -> AttemptResult {
+        AttemptResult { points: self.points, collected: self.collected_points, elapsed: self.elapsed, hits_taken: self.hits_taken }
     }
 
     pub fn top_y(&self) -> f32 {

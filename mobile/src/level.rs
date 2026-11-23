@@ -1,11 +1,14 @@
-//! Level layout and difficulty, ported from the pygame game's level_utils.py. Each of the five
-//! story levels is one stretch of forest three screens wide, with a friend to rescue at the top.
+//! Level layout and difficulty, ported from the pygame game's level_utils.py. Each level is one
+//! stretch of forest three screens wide, with a friend (or a clue to one) at the top. The campaign
+//! sets each level's numbers in its own table; the endless climb ramps them as the story's five
+//! levels once did, harder with every lap.
 
 use crate::consts::*;
 use crate::limb::STUB_SHARE;
 use crate::rng::Rng;
 
-pub const STORY_LEVELS: usize = 5;
+/// The endless climb goes round a ramp of this many levels, harder each lap.
+pub const ENDLESS_LEVELS: usize = 5;
 
 /// Everything that makes a level harder. Branch sizes stay natural at every level; the ratchet is
 /// wider spacing, bendier wood, stronger wind, and more (and faster) enemies.
@@ -463,7 +466,7 @@ mod tests {
 
     #[test]
     fn levels_are_climbable() {
-        for level in 1..=STORY_LEVELS {
+        for level in 1..=ENDLESS_LEVELS {
             for lap in 0..4 {
                 for seed in 0..200 {
                     if let Err(problem) = check_plan(&generate(&endless(level, lap), seed)) {

@@ -33,8 +33,10 @@ const ENDLESS_AT: Vec2 = Vec2::from_array([300.0, 330.0]);
 /// The bar across the top of the screen, and its back button.
 const BAR: Rect = Rect { x: 0.0, y: 0.0, w: VIEW_W, h: 116.0 };
 const BACK: Rect = Rect { x: 14.0, y: 20.0, w: 80.0, h: 80.0 };
+/// The wood's name in the bar (tapped seven times in a playtest build, every level opens).
+pub const TITLE: Rect = Rect { x: 150.0, y: 20.0, w: 300.0, h: 80.0 };
 /// A stone's card, sliding up from the bottom.
-const CARD: Rect = Rect { x: 20.0, y: 730.0, w: 560.0, h: 450.0 };
+const CARD: Rect = Rect { x: 20.0, y: 690.0, w: 560.0, h: 490.0 };
 const CARD_IN: f32 = 0.25;
 /// Kitty's hop along the path to a newly opened stone.
 const WALK_TIME: f32 = 1.2;
@@ -178,6 +180,11 @@ impl MapState {
                 self.focus = stop;
             }
         }
+    }
+
+    /// Show `message` briefly over the map.
+    pub fn say(&mut self, message: impl Into<String>) {
+        self.toast = Some((message.into(), TOAST_TIME));
     }
 
     fn open_card(&mut self, stop: Stop) {
@@ -379,7 +386,7 @@ fn visible(r: Rect, scroll: f32) -> Option<Rect> {
 /// The sky above the regions, where the endless climb waits among the clouds.
 fn draw_sky(assets: &Assets, scroll: f32, save: &SaveData, t: f32) {
     let Some(r) = visible(Rect::new(0.0, 0.0, VIEW_W, TOP_H), scroll) else { return };
-    paint::gradient_rect(r, paint::rgb(0.30, 0.48, 0.86), paint::rgb(0.72, 0.84, 1.0));
+    paint::gradient_rect(wide(r), paint::rgb(0.30, 0.48, 0.86), paint::rgb(0.72, 0.84, 1.0));
     for i in 0..7 {
         if let Some(cloud) = assets.scenery.cloud(i) {
             let scale = 0.45 + paint::hash(i + 40) * 0.35;
@@ -398,7 +405,7 @@ fn draw_sky(assets: &Assets, scroll: f32, save: &SaveData, t: f32) {
 fn draw_region(assets: &Assets, region: RegionId, scroll: f32, save: &SaveData, t: f32) {
     let Some(r) = visible(band(region), scroll) else { return };
     let look = region.look();
-    paint::gradient_rect(r, look.band.0, look.band.1);
+    paint::gradient_rect(wide(r), look.band.0, look.band.1);
     let wood = look.wood;
     match region {
         RegionId::MossyHollow => {
@@ -480,8 +487,13 @@ fn draw_region(assets: &Assets, region: RegionId, scroll: f32, save: &SaveData, 
     }
     let reached = region.levels().next().is_some_and(|first| flow::unlocked(save, first));
     if !reached {
-        paint::gradient_rect(r, Color::new(0.90, 0.93, 1.0, 0.75), Color::new(0.90, 0.93, 1.0, 0.55));
+        paint::gradient_rect(wide(r), Color::new(0.90, 0.93, 1.0, 0.75), Color::new(0.90, 0.93, 1.0, 0.55));
     }
+}
+
+/// `r` stretched out sideways, over the letterbox of a wide screen.
+fn wide(r: Rect) -> Rect {
+    Rect::new(r.x - 300.0, r.y, r.w + 600.0, r.h)
 }
 
 /// A pine: tiers of dark green over a short trunk, `h` tall from `base`.
@@ -494,14 +506,15 @@ fn pine(base: Vec2, h: f32, needles: Color, trunk: Color) {
     }
 }
 
-/// The grass and soil at the foot of the map, where the climb begins.
+/// The grass and soil at the foot of the map, where the climb begins (on down into the letterbox
+/// of a tall screen).
 fn draw_ground(scroll: f32) {
     let Some(r) = visible(Rect::new(0.0, MAP_H - BOTTOM_H, VIEW_W, BOTTOM_H), scroll) else { return };
     let look = RegionId::MossyHollow.look();
     let [grass, grass_dark, soil] = look.ground;
-    draw_rectangle(r.x, r.y + 60.0, r.w, r.h - 60.0, soil);
-    draw_rectangle(r.x, r.y + 60.0, r.w, 22.0, grass);
-    draw_rectangle(r.x, r.y + 78.0, r.w, 8.0, grass_dark);
+    draw_rectangle(r.x - 300.0, r.y, r.w + 600.0, r.h + 800.0, soil);
+    draw_rectangle(r.x - 300.0, r.y, r.w + 600.0, 22.0, grass);
+    draw_rectangle(r.x - 300.0, r.y + 18.0, r.w + 600.0, 8.0, grass_dark);
 }
 
 /// Paw prints from the foot of the map up through every stone: gold as far as Kitty can go,
@@ -630,14 +643,14 @@ fn draw_card(assets: &Assets, state: &MapState, save: &SaveData, input: &MenuInp
             let def = id.def();
             let record = save.level(def.key);
             let region = def.region.info();
-            paint::text(&format!("{} · {} OF 3", region.name.to_uppercase(), def.stage), 300.0, r.y + 52.0, 22.0, GOLD_TEXT, Align::Center);
-            paint::outlined(def.title, 300.0, r.y + 106.0, paint::fit_size(def.title, 46.0, 420.0), CREAM, INK, Align::Center);
+            paint::text(&format!("{} · {} OF 3", region.name.to_uppercase(), def.stage), 300.0, r.y + 50.0, 22.0, GOLD_TEXT, Align::Center);
+            paint::outlined(def.title, 300.0, r.y + 104.0, paint::fit_size(def.title, 46.0, 420.0), CREAM, INK, Align::Center);
             // The critters who live there, the new one marked
             let critters: Vec<_> = ALL_THREATS.iter().copied().filter(|&c| in_roster(c, &def.spec().difficulty)).collect();
             let gap = 84.0;
             let x0 = 300.0 - (critters.len() as f32 - 1.0) * gap / 2.0;
             for (k, &critter) in critters.iter().enumerate() {
-                let at = vec2(x0 + k as f32 * gap, r.y + 172.0);
+                let at = vec2(x0 + k as f32 * gap, r.y + 178.0);
                 let (sprites, frame) = critter.icon(assets);
                 story::fit_sprite_centred(sprites, frame, at, 60.0, 1.0, WHITE);
                 if def.introduces == Some(critter) {
@@ -648,7 +661,7 @@ fn draw_card(assets: &Assets, state: &MapState, save: &SaveData, input: &MenuInp
             let labels = ["Top", "No bumps", &format!("Under {}", mmss(def.star_time))];
             let won = [record.stars.top, record.stars.no_bumps, record.stars.quick];
             for k in 0..3 {
-                let at = vec2(150.0 + 150.0 * k as f32, r.y + 248.0);
+                let at = vec2(150.0 + 150.0 * k as f32, r.y + 258.0);
                 ui::star(at, 24.0, if won[k] { GOLD_TEXT } else { paint::fade(CREAM, 0.25) }, paint::fade(INK, 0.8));
                 paint::text(labels[k], at.x, at.y + 46.0, 20.0, paint::fade(CREAM, 0.9), Align::Center);
             }
@@ -663,7 +676,7 @@ fn draw_card(assets: &Assets, state: &MapState, save: &SaveData, input: &MenuInp
                     Goal::Rescue => format!("Rescue {}!", def.friend().name()),
                 }
             };
-            paint::text(&note, 300.0, r.y + 330.0, 24.0, CREAM, Align::Center);
+            paint::text(&note, 300.0, r.y + 344.0, 24.0, CREAM, Align::Center);
         }
         Stop::Endless => {
             paint::text("BONUS", 300.0, r.y + 52.0, 22.0, GOLD_TEXT, Align::Center);
