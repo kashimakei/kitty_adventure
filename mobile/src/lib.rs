@@ -10,6 +10,7 @@
 
 pub mod audio;
 pub mod camera;
+pub mod campaign;
 pub mod consts;
 pub mod effects;
 pub mod enemies;
@@ -39,7 +40,7 @@ use crate::input::{Input, Pending};
 use crate::level::STORY_LEVELS;
 use crate::sprites::Assets;
 use crate::story::Tally;
-use crate::world::{Outcome, World};
+use crate::world::{Outcome, Setup, World};
 
 pub fn window_conf() -> Conf {
     Conf {
@@ -106,7 +107,7 @@ impl Game {
 
     fn start_level(&mut self) {
         self.seed = self.seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-        self.world = Some(World::new(self.level, self.lap, self.seed));
+        self.world = Some(World::new(&Setup::endless(self.level, self.lap, self.seed)));
         self.go(Screen::LevelIntro);
     }
 
@@ -133,7 +134,7 @@ impl Game {
             score: self.score + world.points,
             level: self.level,
             level_title: story::level_info(self.level).title,
-            friend: world.friend,
+            friend: world.nest.friend(),
             friends_rescued: self.friends_rescued,
             kitty_x: world.kitty.x,
             goal_x: world.nest_position().x,
@@ -260,6 +261,9 @@ pub async fn run() {
                 world.animate(dt);
                 world.draw(&assets, &view, accumulator / STEP);
                 set_camera(&view.screen_camera());
+                if world.reached {
+                    story::draw_rescue_banner(&assets, &story::level_info(game.level), world.goal_time());
+                }
                 let hud = game.hud(game.world.as_ref().unwrap());
                 hud::draw(&assets, &hud, game.screen_time);
                 input.draw();
@@ -275,7 +279,7 @@ pub async fn run() {
                     } else {
                         game.go(Screen::LifeLost { timer: 0.0 });
                     }
-                } else if world.rescue_done() {
+                } else if world.goal_done() {
                     game.friends_rescued += 1;
                     let tally = game.tally();
                     game.go(Screen::LevelClear { tally });

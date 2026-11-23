@@ -16,24 +16,58 @@ use crate::limb::{self, Attachment, Limb, LimbId, LimbSpec};
 use crate::look::{self, Look};
 use crate::rng::Rng;
 use crate::sprites::Assets;
-use crate::story::{self, Friend};
+use crate::campaign::ClueObject;
+use crate::story::paint;
+use crate::story::Friend;
 use crate::tree::{self, Tree};
 
 /// What happened during a step that the game flow cares about.
 #[derive(PartialEq)]
 pub enum Outcome {
     Playing,
-    Rescued,
+    GoalReached,
     OutOfHearts,
+}
+
+/// What waits at the top of a level, by the goal limb's tip.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum NestGoal {
+    /// The friend in their nest, to rescue.
+    Rescue(Friend),
+    /// Something the friend left behind on the wind, and a sign of where they went.
+    Clue { friend: Friend, object: ClueObject },
+}
+
+impl NestGoal {
+    /// The friend Kitty is looking for.
+    pub fn friend(self) -> Friend {
+        match self {
+            NestGoal::Rescue(friend) | NestGoal::Clue { friend, .. } => friend,
+        }
+    }
+}
+
+/// Everything that makes a level: its layout and critters, its seed, its colours and its goal.
+pub struct Setup {
+    pub spec: LevelSpec,
+    pub seed: u64,
+    pub look: Look,
+    pub nest: NestGoal,
+}
+
+impl Setup {
+    /// A level of the endless climb, with a friend waiting at the top.
+    pub fn endless(level: usize, lap: usize, seed: u64) -> Self {
+        Setup { spec: level::endless(level, lap), seed, look: *look::endless(level), nest: NestGoal::Rescue(Friend::for_level(level)) }
+    }
 }
 
 pub struct World {
     /// Its region's colours.
     pub look: Look,
-    pub level: usize,
-    pub lap: usize,
+    /// What waits at the top.
+    pub nest: NestGoal,
     pub difficulty: Difficulty,
-    pub friend: Friend,
     trees: Vec<Tree>,
     bark: Texture2D,
     /// Bark grain running along the limbs.
@@ -60,19 +94,19 @@ pub struct World {
     pub hits_taken: u32,
     pub elapsed: f32,
     best_height: f32,
-    pub rescued: bool,
-    rescue_time: f32,
+    /// Kitty got to the top, this long ago.
+    pub reached: bool,
+    goal_time: f32,
     pub sfx: Vec<Sfx>,
     start_x: f32,
     top_y: f32,
 }
 
 impl World {
-    pub fn new(level: usize, lap: usize, seed: u64) -> Self {
-        let spec = level::endless(level, lap);
-        let (plan, mut limbs, mut rng) = build_level(&spec, seed);
-        let difficulty = spec.difficulty;
-        let look = *look::endless(level);
+    pub fn new(setup: &Setup) -> Self {
+        let (plan, mut limbs, mut rng) = build_level(&setup.spec, setup.seed);
+        let difficulty = setup.spec.difficulty.clone();
+        let look = setup.look;
         for limb in &mut limbs {
             limb.decorate(&mut rng, look.autumn);
         }
@@ -95,9 +129,7 @@ impl World {
         let bark = tree::make_bark_texture(&mut rng, &look.wood);
         Self {
             look,
-            level,
-            lap,
-            friend: Friend::for_level(level),
+            nest: setup.nest,
             difficulty,
             trees,
             bark,
@@ -121,8 +153,8 @@ impl World {
             hits_taken: 0,
             elapsed: 0.0,
             best_height: 0.0,
-            rescued: false,
-            rescue_time: 0.0,
+            reached: false,
+            goal_time: 0.0,
             sfx: Vec::new(),
             start_x,
             top_y: plan.top_y,
@@ -174,10 +206,10 @@ impl World {
         self.time += STEP;
         self.breeze = breeze_at(self.time, self.difficulty.wind);
 
-        if self.rescued {
-            // The friend cheers while Kitty waits, still riding (and weighing down) the branch;
-            // the world keeps swaying
-            self.rescue_time += STEP;
+        if self.reached {
+            // The friend cheers (or the clue floats to her) while Kitty waits, still riding (and
+            // weighing down) the branch; the world keeps swaying
+            self.goal_time += STEP;
             self.kitty.resolve(&self.limbs);
             let pushes = std::mem::take(&mut self.kitty.pushes);
             self.apply(pushes);
@@ -265,14 +297,14 @@ impl World {
             self.points += steps;
         }
 
-        // Reaching the friend's nest
+        // Reaching the friend's nest, or the clue
         if self.kitty.standing_on == Some(Support::Limb(self.goal)) && (self.kitty.x - self.nest_position().x).abs() < 70.0 {
-            self.rescued = true;
+            self.reached = true;
             // She sits and waits now, whatever was held
             self.kitty.forget_input();
             self.sfx.push(Sfx::Rescue);
             self.effects.sparkle(self.nest_position() - vec2(0.0, 40.0));
-            return Outcome::Rescued;
+            return Outcome::GoalReached;
         }
 
         self.camera.follow(self.kitty.rect());
@@ -299,7 +331,7 @@ impl World {
     /// Stomps first (feet landing on an enemy), then anything that strikes Kitty's body.
     /// Hits need the frames' damage masks, so the game calls this with the assets after `step`.
     pub fn collide_with_assets(&mut self, assets: &Assets) {
-        if self.rescued {
+        if self.reached {
             return;
         }
         if let Some(i) = stomp(&self.kitty, &mut self.enemies) {
@@ -381,17 +413,7 @@ impl World {
         draw_rectangle(-50.0, GROUND_Y, WORLD_W + 100.0, 18.0, grass);
         draw_rectangle(-50.0, GROUND_Y + 14.0, WORLD_W + 100.0, 6.0, grass_dark);
 
-        // The friend waiting in the nest
-        let nest = self.nest_position();
-        assets.items.draw("nest_0", nest + vec2(0.0, 14.0), 1.0, WHITE);
-        if self.rescued {
-            let frame = self.friend.cheer_frame((self.rescue_time * 6.0) as usize);
-            let hop = ((self.rescue_time * 6.0).sin().abs()) * 18.0;
-            assets.friends.draw(&frame, nest - vec2(0.0, 4.0 + hop), 1.0, WHITE);
-        } else {
-            let bob = (self.time * 2.0).sin() * 2.0;
-            assets.friends.draw(&self.friend.help_frame(), nest - vec2(0.0, 4.0 + bob), -1.0, WHITE);
-        }
+        self.draw_nest(assets);
 
         for item in &self.items {
             item.draw(assets, &self.limbs, self.time);
@@ -411,22 +433,66 @@ impl World {
             enemy.draw(assets);
         }
         self.effects.draw(assets, look.foliage_tint);
+    }
 
-        if self.rescued {
-            set_camera(&view.screen_camera());
-            story::draw_rescue_banner(assets, &story::level_info(self.level), self.rescue_time);
+    /// What waits at the top: the friend in their nest, or the clue they left caught on the branch.
+    fn draw_nest(&self, assets: &Assets) {
+        let nest = self.nest_position();
+        match self.nest {
+            NestGoal::Rescue(friend) => {
+                assets.items.draw("nest_0", nest + vec2(0.0, 14.0), 1.0, WHITE);
+                if self.reached {
+                    let frame = friend.cheer_frame((self.goal_time * 6.0) as usize);
+                    let hop = ((self.goal_time * 6.0).sin().abs()) * 18.0;
+                    assets.friends.draw(&frame, nest - vec2(0.0, 4.0 + hop), 1.0, WHITE);
+                } else {
+                    let bob = (self.time * 2.0).sin() * 2.0;
+                    assets.friends.draw(&friend.help_frame(), nest - vec2(0.0, 4.0 + bob), -1.0, WHITE);
+                }
+            }
+            NestGoal::Clue { friend, object } => {
+                // Bobbing in the breeze and glinting; once found it floats up to Kitty and fades
+                let found = if self.reached { (self.goal_time / CLUE_FLOAT_TIME).min(1.0) } else { 0.0 };
+                let rest = nest - vec2(0.0, 22.0 + (self.time * 2.5).sin() * 3.0);
+                let at = rest.lerp(vec2(self.kitty.x, self.kitty.y - 90.0), found * (2.0 - found));
+                let alpha = 1.0 - found;
+                let glint = (self.time * 3.0).sin() * 0.5 + 0.5;
+                let frame = format!("{}_0", object.sprite());
+                if assets.clues.has(&frame) {
+                    assets.clues.draw(&frame, at, 1.0, paint::fade(WHITE, alpha));
+                } else {
+                    // Until there's art for it: a bubble with a glimpse of the friend and a question mark
+                    draw_circle(at.x, at.y, 27.0, paint::fade(paint::INK, 0.5 * alpha));
+                    draw_circle(at.x, at.y, 25.0, paint::fade(paint::CREAM, 0.9 * alpha));
+                    assets.friends.draw_ex(&friend.help_frame(), at + vec2(0.0, 16.0), -1.0, 0.42, 0.0, paint::fade(WHITE, 0.6 * alpha));
+                    paint::outlined("?", at.x + 20.0, at.y - 10.0, 30.0, paint::fade(paint::GOLD_TEXT, alpha),
+                                    paint::fade(paint::INK, alpha), paint::Align::Center);
+                }
+                let sparkle = Color::new(1.0, 1.0, 1.0, alpha * (0.4 + 0.6 * glint));
+                assets.items.draw_ex("star_0", at + vec2(-22.0, -20.0), 1.0, 0.3 + 0.25 * glint, self.time, sparkle);
+            }
         }
     }
 
-    /// The rescue has played long enough to move on.
-    pub fn rescue_done(&self) -> bool {
-        self.rescued && self.rescue_time > 3.0
+    /// The goal has had its moment (the friend's cheer, or the clue found) and play can move on.
+    pub fn goal_done(&self) -> bool {
+        self.reached && self.goal_time > GOAL_PAUSE
+    }
+
+    /// How long ago Kitty reached the goal.
+    pub fn goal_time(&self) -> f32 {
+        self.goal_time
     }
 
     pub fn top_y(&self) -> f32 {
         self.top_y
     }
 }
+
+/// How long the friend's cheer (or the clue's moment) plays before play moves on, and how long the
+/// clue takes to float up to Kitty.
+const GOAL_PAUSE: f32 = 3.0;
+const CLUE_FLOAT_TIME: f32 = 0.8;
 
 /// A level's plan and settled limbs, and the random stream that goes on to decorate it. The game
 /// and the climb tests both build levels through here.

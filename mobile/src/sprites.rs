@@ -93,6 +93,14 @@ impl Sprites {
         Self { frames: names.zip(frames).collect() }
     }
 
+    /// Like `load`, but art that isn't there yet (no anchors.json) leaves the set empty.
+    pub async fn load_optional(dir: &str) -> Self {
+        match load_string(&format!("{dir}/anchors.json")).await {
+            Ok(_) => Self::load(dir).await,
+            Err(_) => Self { frames: HashMap::new() },
+        }
+    }
+
     pub fn get(&self, name: &str) -> &Frame {
         self.frames.get(name).unwrap_or_else(|| panic!("missing sprite frame {name}"))
     }
@@ -250,6 +258,10 @@ pub struct Assets {
     pub friends: Sprites,
     pub items: Sprites,
     pub foliage: Sprites,
+    /// The regions' helper critters and the clues to the friends, once their art is in (until
+    /// then, empty: see `Sprites::has`).
+    pub helpers: Sprites,
+    pub clues: Sprites,
     /// The painted forest used behind the menu screens.
     pub background: Texture2D,
     /// The sky and parallax layers behind the trees in play.
@@ -269,6 +281,8 @@ impl Assets {
         let snake = progress.load("snake", "Coiling the snakes...").await;
         let crow = progress.load("crow", "Gathering the crows...").await;
         let eagle = progress.load("eagle", "Calling the eagles...").await;
+        let helpers = progress.load_optional("helpers", "Asking around the woods...").await;
+        let clues = progress.load_optional("clues", "Following the clues...").await;
         let fraction = progress.done as f32 / LOAD_STAGES as f32;
         draw_loading(fraction, "Painting the sky...");
         next_frame().await;
@@ -277,12 +291,13 @@ impl Assets {
         let scenery = while_loading(Scenery::load(), fraction, "Painting the sky...").await;
         draw_loading(1.0, "Ready!");
         next_frame().await;
-        Self { kitty, dog, eagle, squirrel, snake, crow, friends, items, foliage, background, scenery }
+        Self { kitty, dog, eagle, squirrel, snake, crow, friends, items, foliage, helpers, clues, background, scenery }
     }
 }
 
-/// How many stages Assets::load works through: nine characters, then the scenery.
-const LOAD_STAGES: usize = 10;
+/// How many stages Assets::load works through: nine characters, the helpers and clues, then the
+/// scenery.
+const LOAD_STAGES: usize = 12;
 
 struct Progress {
     done: usize,
@@ -295,6 +310,15 @@ impl Progress {
         draw_loading(fraction, label);
         next_frame().await;
         let sprites = while_loading(Sprites::load(dir), fraction, label).await;
+        self.done += 1;
+        sprites
+    }
+
+    async fn load_optional(&mut self, dir: &str, label: &str) -> Sprites {
+        let fraction = self.done as f32 / LOAD_STAGES as f32;
+        draw_loading(fraction, label);
+        next_frame().await;
+        let sprites = while_loading(Sprites::load_optional(dir), fraction, label).await;
         self.done += 1;
         sprites
     }

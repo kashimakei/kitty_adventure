@@ -1,5 +1,5 @@
-//! Every level can be climbed, whatever its seed (the game picks one at random each time a level
-//! starts). A search over the real physics, stepped the way World does it (through `step_kitty`
+//! Every campaign level can be climbed at its fixed seed, and endless levels (whose seeds are
+//! picked at random) on many seeds. A search over the real physics, stepped the way World does it (through `step_kitty`
 //! and `step_limb`, without the graphics): from the ground, and from a few standing spots on each
 //! limb Kitty gets to, she tries charged leaps of a few strengths steered across each limb within
 //! reach, walks off either end, and drops through. Wherever she ends up standing (or hanging, and
@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
+use kitty_mobile::campaign;
 use kitty_mobile::consts::*;
 use kitty_mobile::input::Controls;
 use kitty_mobile::kitty::{Kitty, Support};
@@ -454,54 +455,76 @@ impl<'a> Search<'a> {
     }
 }
 
-/// Search levels 1-5, laps 0-1 and `seeds`, each with the path's branches snapped as each of
-/// `configs` says, on every core (but not a level with no thin path branches with them snapped,
-/// which would be the same search again). Returns the levels she can't climb, for each of
-/// `Snapped::ALL`.
-fn sweep(seeds: &[u64], configs: &[Snapped]) -> [Vec<String>; 4] {
-    let has_thin = |level: usize, lap: usize, seed: u64| {
-        level::generate(&level::endless(level, lap), seed).branches.iter().take_while(|b| b.on_path).any(|b| b.strength > 0.0)
-    };
-    let cases: Vec<(usize, usize, u64, usize)> = (1..=5)
-        .flat_map(|level| (0..2).flat_map(move |lap| seeds.iter().flat_map(move |&seed| (0..Snapped::ALL.len()).map(move |k| (level, lap, seed, k)))))
-        .filter(|&(level, lap, seed, k)| {
-            let snapped = Snapped::ALL[k];
-            configs.contains(&snapped) && (!matches!(snapped, Snapped::Thin | Snapped::Both) || has_thin(level, lap, seed))
-        })
-        .collect();
+/// One search: a level's spec and seed, with the path's branches snapped as `snapped` says.
+struct Case {
+    name: String,
+    spec: LevelSpec,
+    seed: u64,
+    snapped: Snapped,
+}
+
+/// Whether the level has a thin branch on its path (with none, snapping them is the same search).
+fn has_thin_path(spec: &LevelSpec, seed: u64) -> bool {
+    level::generate(spec, seed).branches.iter().take_while(|b| b.on_path).any(|b| b.strength > 0.0)
+}
+
+/// Every case in `snaps` (but not thin ones for a level with no thin path branches).
+fn cases(name: &str, spec: &LevelSpec, seed: u64, snaps: &[Snapped]) -> Vec<Case> {
+    let thin = has_thin_path(spec, seed);
+    snaps.iter().copied()
+        .filter(|&snapped| thin || !matches!(snapped, Snapped::Thin | Snapped::Both))
+        .map(|snapped| Case { name: name.to_string(), spec: spec.clone(), seed, snapped })
+        .collect()
+}
+
+/// Search every case on every core; whether each could be climbed.
+fn search(cases: &[Case]) -> Vec<bool> {
     let next = AtomicUsize::new(0);
-    let started = Instant::now();
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
-    let results: Vec<Vec<(usize, bool, String)>> = std::thread::scope(|scope| {
+    let results: Vec<Vec<(usize, bool)>> = std::thread::scope(|scope| {
         let runs: Vec<_> = (0..threads).map(|_| scope.spawn(|| {
             let mut results = Vec::new();
             loop {
                 let i = next.fetch_add(1, Ordering::Relaxed);
-                let Some(&(level, lap, seed, k)) = cases.get(i) else { break };
+                let Some(case) = cases.get(i) else { break };
                 let t = Instant::now();
-                let snapped = Snapped::ALL[k];
-                let plan = Level::new(&level::endless(level, lap), seed, snapped);
+                let plan = Level::new(&case.spec, case.seed, case.snapped);
                 let climb = Search::new(&plan).climb();
-                let name = format!("L{level} lap {lap} seed {seed}");
                 if !climb.goal {
-                    println!("{name} {}: can't climb past path branch {:?} of {} ({} leaps, {:.1} s)",
-                             snapped.name(), climb.highest, plan.path, climb.leaps, t.elapsed().as_secs_f32());
+                    println!("{} {}: can't climb past path branch {:?} of {} ({} leaps, {:.1} s)",
+                             case.name, case.snapped.name(), climb.highest, plan.path, climb.leaps, t.elapsed().as_secs_f32());
                 }
-                results.push((i, climb.goal, name));
+                results.push((i, climb.goal));
             }
             results
         })).collect();
         runs.into_iter().map(|run| run.join().unwrap()).collect()
     });
+    let mut climbed = vec![false; cases.len()];
+    for (i, ok) in results.into_iter().flatten() {
+        climbed[i] = ok;
+    }
+    climbed
+}
+
+/// Search endless levels 1-5, laps 0-1 and `seeds`, each with the path's branches snapped as each
+/// of `configs` says. Returns the levels she can't climb, for each of `Snapped::ALL`.
+fn sweep(seeds: &[u64], configs: &[Snapped]) -> [Vec<String>; 4] {
+    let started = Instant::now();
+    let all: Vec<Case> = (1..=5)
+        .flat_map(|level| (0..2).flat_map(move |lap| seeds.iter().map(move |&seed| (level, lap, seed))))
+        .flat_map(|(level, lap, seed)| cases(&format!("L{level} lap {lap} seed {seed}"), &level::endless(level, lap), seed, configs))
+        .collect();
+    let climbed = search(&all);
     let mut failed: [Vec<String>; 4] = Default::default();
-    for (i, climbed, name) in results.into_iter().flatten() {
-        if !climbed {
-            failed[cases[i].3].push(name);
+    for (case, ok) in all.iter().zip(&climbed) {
+        if !ok {
+            failed[Snapped::ALL.iter().position(|&s| s == case.snapped).unwrap()].push(case.name.clone());
         }
     }
-    let counts: Vec<String> = (0..Snapped::ALL.len()).filter(|&k| configs.contains(&Snapped::ALL[k])).map(|k| {
-        let total = cases.iter().filter(|case| case.3 == k).count();
-        format!("{} of {total} {}", failed[k].len(), Snapped::ALL[k].name())
+    let counts: Vec<String> = Snapped::ALL.iter().enumerate().filter(|(_, s)| configs.contains(s)).map(|(k, s)| {
+        let total = all.iter().filter(|case| case.snapped == *s).count();
+        format!("{} of {total} {}", failed[k].len(), s.name())
     }).collect();
     println!("{} seeds, {:.0} s: can't be climbed: {}", seeds.len(), started.elapsed().as_secs_f32(), counts.join(", "));
     failed
@@ -512,19 +535,60 @@ fn assert_climbable(failed: &[Vec<String>; 4]) {
     assert!(failures.is_empty(), "can't be climbed: {}", failures.join("; "));
 }
 
-/// Every level can be climbed on a handful of seeds (ones where a filler overhead catches the
+/// Every campaign level can be climbed at its own seed: as generated, with the path's sturdy
+/// branches snapped short, with its thin ones snapped off, and with both.
+#[test]
+fn campaign_levels_can_be_climbed() {
+    let all: Vec<Case> = campaign::LEVELS.iter().flat_map(|def| cases(def.key, &def.spec(), def.seed, &Snapped::ALL)).collect();
+    let climbed = search(&all);
+    let failed: Vec<String> = all.iter().zip(&climbed).filter(|(_, ok)| !**ok).map(|(c, _)| format!("{} {}", c.name, c.snapped.name())).collect();
+    assert!(failed.is_empty(), "can't be climbed: {}", failed.join("; "));
+}
+
+/// Picks seeds for the campaign: for each level, the first few seeds (each level looking in a range
+/// of its own, since levels on the same seed would share a route) whose plan is sound, places all
+/// its critters and hearts, and can be climbed in every snapped configuration, with how tall each
+/// is and how many thin branches and forks it has. Run it after changing a level's tuning:
+/// `cargo test --release --test climbable pick_campaign_seeds -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn pick_campaign_seeds() {
+    for (i, def) in campaign::LEVELS.iter().enumerate() {
+        let spec = def.spec();
+        let mut found = Vec::new();
+        for seed in (0..400u64).map(|k| (i as u64 + 1) * 1000 + k) {
+            let plan = level::generate(&spec, seed);
+            let hearts = plan.items.iter().filter(|i| i.kind == level::ItemKind::Heart).count();
+            if level::check_plan(&plan).is_err() || plan.squirrel_spots.len() != spec.difficulty.squirrels
+                || plan.snake_spots.len() != spec.difficulty.snakes || hearts != spec.hearts {
+                continue;
+            }
+            if !search(&cases(def.key, &spec, seed, &Snapped::ALL)).iter().all(|&ok| ok) {
+                continue;
+            }
+            let thin = plan.branches.iter().filter(|b| b.on_path && b.strength > 0.0).count();
+            found.push(format!("{seed} (height {:.0}, {thin} thin on the path, {} forks)", -plan.top_y, plan.forks.len()));
+            if found.len() == 5 {
+                break;
+            }
+        }
+        println!("{}: {}", def.key, found.join(", "));
+    }
+}
+
+/// Endless levels can be climbed on a handful of seeds (ones where a filler overhead catches the
 /// leaps for the first path branch, or a single leap doesn't get past a stub), as generated, with
 /// the path's sturdy branches snapped short, and with its thin ones snapped off as well.
 #[test]
-fn every_level_can_be_climbed() {
+fn endless_levels_can_be_climbed() {
     assert_climbable(&sweep(&[4, 7, 8, 10], &[Snapped::None, Snapped::Sturdy, Snapped::Both]));
 }
 
 /// The same over many more seeds, and with only the thin ones snapped too:
-/// `cargo test --release --test climbable -- --ignored --nocapture`.
+/// `cargo test --release --test climbable endless_levels_can_be_climbed_whatever_the_seed -- --ignored --nocapture`.
 #[test]
 #[ignore]
-fn every_level_can_be_climbed_whatever_the_seed() {
+fn endless_levels_can_be_climbed_whatever_the_seed() {
     let seeds: Vec<u64> = (0..48).collect();
     assert_climbable(&sweep(&seeds, &Snapped::ALL));
 }
