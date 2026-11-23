@@ -26,14 +26,17 @@
 
 ## The story
 
-One blustery night a great big wind went whooshing through Whisker Wood and swept Kitty's five
-best friends right up into the treetops. In the morning, five little voices are calling down from
-the tallest trees. They're much too small to climb down by themselves, so Kitty fluffs up her
+One blustery night a great big wind went whooshing through Whisker Wood and scattered Kitty's five
+best friends far and wide across the treetops. In the morning, five little voices are calling from
+all over the wood. They're much too small to climb down by themselves, so Kitty fluffs up her
 tail, looks up, up, up... and starts climbing.
 
-Every level is a stretch of forest three screens wide. Pounce from branch to branch (they bend
-and bounce under Kitty like trampolines, and snap if pushed too far), dodge the critters that live
-up there, and reach the friend waiting in a nest at the top.
+The map of Whisker Wood climbs through five regions, from Mossy Hollow up to the Tallest Tree in
+the clouds, three levels each. Every level is a stretch of forest three screens wide. Pounce from
+branch to branch (they bend and bounce under Kitty like trampolines, and snap if pushed too far),
+dodge the critters that live up there, and reach the top. The first two levels of a region end at a
+clue to where its friend blew, told by a helper who lives there; the third ends with the rescue.
+Bring all five friends home and the Endless Climb opens.
 
 ## Screens
 
@@ -69,9 +72,9 @@ up there, and reach the friend waiting in a nest at the top.
   </tr>
   <tr>
     <td align="center"><sub>Mossy&nbsp;Hollow</sub></td>
-    <td align="center"><sub>Bramble&nbsp;Path</sub></td>
     <td align="center"><sub>Whispering&nbsp;Pines</sub></td>
-    <td align="center"><sub>Blackberry&nbsp;Ridge</sub></td>
+    <td align="center"><sub>Craggy&nbsp;Peaks</sub></td>
+    <td align="center"><sub>Willow&nbsp;Creek</sub></td>
     <td align="center"><sub>The&nbsp;Tallest&nbsp;Tree</sub></td>
   </tr>
 </table>
@@ -95,8 +98,9 @@ up there, and reach the friend waiting in a nest at the top.
   </tr>
 </table>
 
-A new threat joins on each level, from squirrels on the first to eagles on the fifth. Land on a
-squirrel or snake from above to bop it, or pounce on a crow or eagle, even in mid-air (an eagle is
+Each region brings new critters one at a time: squirrels, dogs and then crows in Mossy Hollow,
+eagles in the Whispering Pines, snakes sunning on the Craggy Peaks, and everything at once higher up.
+Land on a squirrel or snake from above to bop it, or pounce on a crow or eagle, even in mid-air (an eagle is
 worth double). Every enemy gives a warning before it attacks (a snarl, a rear, a screech), and only
 teeth, beaks, claws and acorns hurt.
 
@@ -124,9 +128,13 @@ teeth, beaks, claws and acorns hurt.
 - **Drop through.** Swipe down (or press ↓) while standing on a branch to drop through it to the
   one below.
 - **Snack along the way.** Fish treats are worth points, golden fish more, and hearts top Kitty up.
-  Kitty has three hearts and three lives.
-- **Be quick and careful.** Each rescue scores 1000, plus a time bonus and a bonus for not getting
-  bumped. Your best score is saved.
+  Kitty has three hearts each try; run out and you can try the level again from the bottom.
+- **Pick a level on the map.** Levels open one after another as you clear them, and you can go
+  back to any you've opened. Drag the map to climb it; tap a stone to see its critters and stars.
+- **Win the stars.** Each level has three: reach the top, get there without a bump, and beat its
+  target time (the clock in the corner stays gold while you're on time). Each clue or rescue scores
+  1000, plus a time bonus and a bonus for not getting bumped. Your best score and stars for every
+  level are saved.
 
 ## Features
 
@@ -134,7 +142,8 @@ teeth, beaks, claws and acorns hurt.
   on them like trampolines.
 - Touch controls made for thumbs: a slider bar to walk and run, hold and release to pounce,
   swipe down to drop.
-- Five story levels with their own friend and threat, then endless rounds that get wilder.
+- Fifteen levels across five regions on a map you climb, each region with its own colours,
+  critters, friend and helper, clues to follow, stars to win, and an endless climb to unlock.
 - Three-screen-wide levels with a minimap, and layered parallax scenery: clouds, misty
   mountains, a river valley and a forest that slip away as Kitty climbs.
 - Painted sprite characters with pixel-accurate hits: only teeth, beaks, claws and acorns count.

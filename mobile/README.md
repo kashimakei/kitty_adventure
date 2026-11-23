@@ -1,10 +1,11 @@
 # Kitty Adventure for Android, web and desktop
 
 Kitty Adventure: The Treetop Rescue, in Rust with [macroquad](https://macroquad.rs). A storm has
-scattered Kitty's five friends to the tops of the tallest trees; each level is a stretch of forest
-three screens wide where she climbs bendy branches, dodges squirrels, snakes, crows, dogs and
-eagles, and reaches the friend waiting in a nest at the top. After the five story levels come
-harder laps.
+scattered Kitty's five friends across Whisker Wood. A map climbs through five regions of three
+levels each (fixed layouts, picked from the map as they unlock); each level is a stretch of forest
+three screens wide where she climbs bendy branches, dodges squirrels, dogs, crows, eagles and
+snakes, and reaches a clue to her friend, or at a region's end the friend. Every level keeps its
+best score and up to three stars, and rescuing the last friend opens an endless climb.
 
 The same code runs on desktop, in the browser (wasm) and on Android. The branches use the same
 physics as the pygame original in the repository root (`Engines/`, built here without its Python
@@ -93,24 +94,33 @@ mobile/
   build.sh          build and run targets (above)
   Cargo.toml        the kitty_mobile crate: a library (for Android) and the `kitty` binary
   src/
-    lib.rs          screens (title, story, levels, pause, game over) and the fixed 60 Hz loop
+    lib.rs          screens (title, story, map, levels, pause, try again, level clear, clues,
+                    endless) and the fixed 60 Hz loop
+    campaign.rs     the five regions and fifteen levels: seeds, tuning, critters, clues, lines
+    flow.rs         the rules of progress: unlocks, stars, bests, the level-clear tally
+    map.rs          the scrolling map of Whisker Wood
+    look.rs         each region's colours (sky, scenery, leaves, wood, ground)
     world.rs        one level: trees, Kitty, enemies, items, collisions, drawing
-    level.rs        level generation and difficulty per level and lap
+    level.rs        level generation from a LevelSpec, and the endless climb's ramp
     kitty.rs        Kitty: walking, the charge jump, bouncing, hanging, dropping, animation
     limb.rs tree.rs branches (wrapping the Engines/ physics) and trunks
     enemies/        squirrel, snake, crow, dog, eagle
     camera.rs       the 600x1200 playfield letterboxed to any screen, and the camera
     sprites.rs      sprite frames, anchors and pixel-accurate hit masks from assets/
-    input/          keyboard, mouse and touch turned into controls; touch.rs has the gestures
-                    (slider, hold and release, swipe down) as pure logic the tests drive
+    input/          keyboard, mouse and touch turned into controls; touch.rs has the play
+                    gestures (slider, hold and release, swipe down) and menu.rs the menu ones
+                    (taps, drags, flings, keys) as pure logic the tests drive
+    ui.rs           buttons for the menus and cards
     platform.rs     Android hooks over JNI (screen density, going to the background)
-    hud.rs story.rs audio.rs save.rs items.rs effects.rs parallax.rs rng.rs consts.rs
+    save.rs         progress as JSON (save.json, or localStorage on the web), merged on write
+    hud.rs story.rs audio.rs items.rs effects.rs parallax.rs rng.rs consts.rs
   tests/            physics.rs (Kitty's jumps on the branches, snapping limbs and forks, and
                     that every level can be climbed with single leaps), climbable.rs (a search
-                    over the physics that every level can be climbed whatever its seed, even
-                    with the path's sturdy branches snapped short and its thin ones snapped off;
-                    `cargo test --release --test climbable -- --ignored` sweeps 48 seeds in a
-                    few minutes), touch.rs (gestures), squirrel.rs
+                    over the physics that every campaign level can be climbed at its seed, and
+                    endless levels on many seeds, even with the path's sturdy branches snapped
+                    short and its thin ones snapped off; pick_campaign_seeds, ignored, picks
+                    seeds after a level's tuning changes), touch.rs and menu.rs (gestures),
+                    bops.rs, spawner.rs, squirrel.rs
   web/              index.html and macroquad's JS loader for the web build
   android/          the Gradle project
     app/build.gradle.kts            app settings and the cargo-ndk build
